@@ -1359,13 +1359,17 @@ body {
   position: fixed;
   inset: 0;
   z-index: 32;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 1rem;
   background: rgba(7, 10, 20, 0.92);
   pointer-events: auto;
   touch-action: none;
+}
+
+.mobile-rotate-overlay--open {
+  display: flex;
 }
 
 .mobile-rotate-overlay__card {

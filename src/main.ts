@@ -82,33 +82,18 @@ const {
   matchEndRoot,
 } = mountAppShell(root)
 
-const isMobileLikeDevice = (() => {
-  if (typeof window === 'undefined') return false
-  const touchPoints = navigator.maxTouchPoints > 0
-  const coarse = window.matchMedia('(pointer: coarse)').matches
-  const mobileUa = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
-  return touchPoints && (coarse || mobileUa)
-})()
-let mobilePortraitBlocked = false
-
-function isLandscapeViewport(): boolean {
-  if (window.screen?.orientation?.type) {
-    return String(window.screen.orientation.type).startsWith('landscape')
-  }
-  return window.innerWidth >= window.innerHeight
-}
+let rotateOverlayBlockingGameplay = false
 
 function syncMobileOrientationGate(): void {
-  if (!isMobileLikeDevice) {
-    mobilePortraitBlocked = false
-    mobileRotateOverlay.hidden = true
-    mobileRotateOverlay.setAttribute('aria-hidden', 'true')
-    return
-  }
-  const blocked = !isLandscapeViewport()
-  mobilePortraitBlocked = blocked
-  mobileRotateOverlay.hidden = !blocked
-  mobileRotateOverlay.setAttribute('aria-hidden', blocked ? 'false' : 'true')
+  const isTouchMobile =
+    window.matchMedia('(pointer: coarse)').matches &&
+    window.matchMedia('(hover: none)').matches
+  const isPortrait = window.innerHeight > window.innerWidth
+  const mobilePortraitBlocked = isTouchMobile && isPortrait
+  rotateOverlayBlockingGameplay = mobilePortraitBlocked
+  mobileRotateOverlay.hidden = !mobilePortraitBlocked
+  mobileRotateOverlay.classList.toggle('mobile-rotate-overlay--open', mobilePortraitBlocked)
+  mobileRotateOverlay.setAttribute('aria-hidden', mobilePortraitBlocked ? 'false' : 'true')
 }
 
 const KO_ROUND_DRAMA_SEC = 2.35
@@ -957,13 +942,14 @@ const stage = startMinimalStage(canvas, {
       loggedOnlineControlBootstrap = false
     }
 
-    const touchCombatActive = getGameUiState() === 'in_match' && !mobilePortraitBlocked
+    const touchCombatActive = getGameUiState() === 'in_match' && !rotateOverlayBlockingGameplay
     mobileTouch.setCombatActive(touchCombatActive)
     const localSnapRaw = mergeSnapshots(keyboard.readFrame(), mobileTouch.readFrame())
-    const localSnap = mobilePortraitBlocked ? EMPTY_FRAME_SNAPSHOT : localSnapRaw
+    const localSnap = rotateOverlayBlockingGameplay ? EMPTY_FRAME_SNAPSHOT : localSnapRaw
     const inMatch = flowMode === 'vs-bot-match' || flowMode === 'online-match'
     const preRoundControlsLocked =
-      inMatch && (vsBotPhase === 'countdown' || countdownHoldForAssets || mobilePortraitBlocked)
+      inMatch &&
+      (vsBotPhase === 'countdown' || countdownHoldForAssets || rotateOverlayBlockingGameplay)
     const controlSnap = preRoundControlsLocked ? EMPTY_FRAME_SNAPSHOT : localSnap
 
     if (preRoundControlsLocked && !prevPreRoundControlsLocked) {
@@ -986,7 +972,7 @@ const stage = startMinimalStage(canvas, {
       vsBotPhase === 'fighting' &&
       !matchPaused &&
       koRoundHaltTimer <= 0 &&
-      !mobilePortraitBlocked
+      !rotateOverlayBlockingGameplay
     const inOnlineFight = flowMode === 'online-match' && simActive
     const onlineConnected = Boolean(
       onlineLobbyMount?.session.isOpen() && onlineLobbyMount.session.hasPeer(),

@@ -7,10 +7,7 @@ const STICK_MAX_RADIUS_PX = 54
 
 function supportsTouchControls(): boolean {
   if (typeof window === 'undefined') return false
-  const touchPoints = navigator.maxTouchPoints > 0
-  const coarse = window.matchMedia('(pointer: coarse)').matches
-  const mobileUa = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
-  return touchPoints && (coarse || mobileUa)
+  return window.matchMedia('(pointer: coarse)').matches
 }
 
 export class MobileTouchInput {
