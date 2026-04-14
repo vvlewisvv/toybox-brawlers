@@ -86,11 +86,10 @@ const {
 
 const isMobileLikeDevice = (() => {
   if (typeof window === 'undefined') return false
-  return (
-    window.matchMedia('(pointer: coarse)').matches ||
-    'ontouchstart' in window ||
-    navigator.maxTouchPoints > 0
-  )
+  const touchPoints = navigator.maxTouchPoints > 0
+  const coarse = window.matchMedia('(pointer: coarse)').matches
+  const mobileUa = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
+  return touchPoints && (coarse || mobileUa)
 })()
 let mobilePortraitBlocked = false
 
