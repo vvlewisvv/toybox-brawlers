@@ -67,7 +67,6 @@ const root = document.getElementById('app')
 if (!root) {
   throw new Error('#app missing')
 }
-const appRoot: HTMLElement = root
 
 initAttackTimingDebugFromUrl()
 initArcadeBotDebugFromUrl()
@@ -76,7 +75,6 @@ const {
   canvas,
   overlay,
   mobileRotateOverlay,
-  mobileFullscreenBtn,
   matchHudMount,
   screenPunch,
   koMoment,
@@ -111,31 +109,6 @@ function syncMobileOrientationGate(): void {
   mobilePortraitBlocked = blocked
   mobileRotateOverlay.hidden = !blocked
   mobileRotateOverlay.setAttribute('aria-hidden', blocked ? 'false' : 'true')
-}
-
-async function enterMobileFullscreenAndLockLandscape(): Promise<void> {
-  if (!isMobileLikeDevice) return
-  try {
-    if (!document.fullscreenElement) {
-      await appRoot.requestFullscreen()
-    }
-  } catch (e) {
-    console.warn('[mobile] fullscreen request failed', e)
-  }
-  try {
-    const so: {
-      lock?: (orientation: 'landscape') => Promise<void>
-    } | null = (window.screen?.orientation as unknown as {
-      lock?: (orientation: 'landscape') => Promise<void>
-    } | null)
-    if (so && typeof so.lock === 'function') {
-      await so.lock('landscape')
-    }
-  } catch (e) {
-    console.warn('[mobile] orientation lock not available or denied', e)
-  } finally {
-    syncMobileOrientationGate()
-  }
 }
 
 const KO_ROUND_DRAMA_SEC = 2.35
@@ -316,14 +289,10 @@ const keyboard = createKeyboardInput({ preventBrowserDefaults: false })
 const mobileTouch = createMobileTouchInput()
 
 keyboard.attach()
-mobileTouch.attach(appRoot)
+mobileTouch.attach(root)
 syncMobileOrientationGate()
 window.addEventListener('resize', syncMobileOrientationGate, { passive: true })
 window.addEventListener('orientationchange', syncMobileOrientationGate)
-document.addEventListener('fullscreenchange', syncMobileOrientationGate)
-mobileFullscreenBtn.addEventListener('click', () => {
-  void enterMobileFullscreenAndLockLandscape()
-})
 
 function mergeSnapshots(a: FrameSnapshot, b: FrameSnapshot): FrameSnapshot {
   return {
