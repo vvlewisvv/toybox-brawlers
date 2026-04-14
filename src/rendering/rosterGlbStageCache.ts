@@ -8,6 +8,7 @@ import {
   mergeTaggedClips,
 } from './glbFighterPipeline'
 import {
+  getAllRequiredRosterGlbUrls,
   ROSTER_GLB_FIGHTER_IDS,
   type RosterGlbFighterId,
   ROSTER_GLB_STAGE_MANIFEST,
@@ -40,6 +41,7 @@ function emptyEntry(): CacheEntry {
 }
 
 const cache = new Map<RosterGlbFighterId, CacheEntry>()
+let runtimeGlbUrlProbeDone = false
 
 for (const id of ROSTER_GLB_FIGHTER_IDS) {
   cache.set(id, emptyEntry())
@@ -74,6 +76,29 @@ async function loadUrlListIfNeeded(
   return clips
 }
 
+export async function probeRequiredRosterGlbUrls(): Promise<string[]> {
+  if (runtimeGlbUrlProbeDone) return []
+  runtimeGlbUrlProbeDone = true
+  const urls = getAllRequiredRosterGlbUrls()
+  const missing: string[] = []
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const res = await fetch(url, { method: 'HEAD' })
+        if (!res.ok) missing.push(url)
+      } catch {
+        missing.push(url)
+      }
+    }),
+  )
+  if (missing.length) {
+    console.error('[assets] missing GLB files (fallback placeholders will be used)', missing)
+  } else {
+    console.info('[assets] all required GLB files reachable', { count: urls.length })
+  }
+  return missing
+}
+
 export function getRosterGlbTemplate(id: RosterGlbFighterId): Object3D | null {
   return getEntry(id).template
 }
@@ -95,6 +120,7 @@ export async function preloadRosterGlbBoot(id: RosterGlbFighterId): Promise<bool
     const m = ROSTER_GLB_STAGE_MANIFEST[id]
     const charRes = await loadGlbCharacterTemplate(m.character)
     if (!charRes.gltf) {
+      console.warn(`[assets] fighter=${id} failed to load character template ${m.character}`)
       e.template = null
       e.clips.length = 0
       e.bootDone = true
@@ -149,6 +175,8 @@ export async function preloadRosterGlbCombat(id: RosterGlbFighterId): Promise<bo
       if (w) {
         markUrlsLoaded(e, [walk])
         extraClips.push(...mergeTaggedClips(w, 'walk'))
+      } else {
+        console.warn(`[assets] fighter=${id} missing walk GLB: ${walk}`)
       }
     }
     if (!e.loadedUrls.has(run)) {
@@ -156,6 +184,8 @@ export async function preloadRosterGlbCombat(id: RosterGlbFighterId): Promise<bo
       if (r) {
         markUrlsLoaded(e, [run])
         extraClips.push(...mergeTaggedClips(r, 'run'))
+      } else {
+        console.warn(`[assets] fighter=${id} missing run GLB: ${run}`)
       }
     }
 

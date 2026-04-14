@@ -108,3 +108,17 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
   },
 }
+
+export function getAllRequiredRosterGlbUrls(): string[] {
+  const urls: string[] = []
+  for (const id of ROSTER_GLB_FIGHTER_IDS) {
+    const m = ROSTER_GLB_STAGE_MANIFEST[id]
+    urls.push(m.character)
+    urls.push(m.combatWalkRun.walk)
+    urls.push(m.combatWalkRun.run)
+    for (const t of m.bootTagged) urls.push(t.url)
+    for (const t of m.combatTagged) urls.push(t.url)
+    for (const t of m.roundEndTagged) urls.push(t.url)
+  }
+  return [...new Set(urls)]
+}

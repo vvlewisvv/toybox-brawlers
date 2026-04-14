@@ -33,6 +33,8 @@ export function toggleCombatTestBotRuntime(): void {
 export type ArcadeBotAiPhase =
   | 'idle'
   | 'approach'
+  | 'hold'
+  | 'retreat'
   | 'pressure'
   | 'reposition'
   | 'block'
@@ -306,26 +308,26 @@ export function createCombatTestBotFrameSource(
   let heavyDebt = 0
   let lastKind: AttackKind | null = null
   let sameAttackStreak = 0
-  let aaCooldown = 0
-  let playerAirTime = 0
-  let aaSpentThisJump = false
   let heldBlockLastFrame = false
   let blockCooldown = 0
   let thinkTimer = 0
-  let stickyMoveT = 0
-  let stickyMoveTowardPlayer = 0
   let whiffRecoverT = 0
   let wasAttackBusy = false
   let swingStarted = false
+  let roundStartEvaluateT = 0.24 + rng() * 0.13
+  let retreatTimer = 0
+  let lastPhaseLogged: ArcadeBotAiPhase | null = null
 
-  const PUNISH_MIN_D = 0.24
-  const PUNISH_MAX_D = 0.98
+  const RETREAT_STEP_MIN = 0.06
+  const RETREAT_STEP_MAX = 0.18
+  const EDGE_EPS = 0.08
+  const ROUND_START_HP_EPS = 0.001
 
-  const AA_MIN_D = 0.22
-  const AA_MAX_D = 1.08
-  const AA_REACT_MIN = 0.055
-  const AA_REACT_MAX = 0.42
-  const AA_COOLDOWN_AFTER = 0.38
+  function logPhaseTransition(next: ArcadeBotAiPhase): void {
+    if (lastPhaseLogged === next) return
+    lastPhaseLogged = next
+    console.info('[bot-ai] state -> ' + next)
+  }
 
   return (bot, player, dt) => {
     const held = new Set<InputAction>()
@@ -337,8 +339,16 @@ export function createCombatTestBotFrameSource(
     let debugChosen: AttackKind | null = null
 
     const lim = DEFAULT_MOVEMENT.xLimit
+    const fullHp =
+      Math.abs(bot.getHealth().current - bot.getHealth().max) < ROUND_START_HP_EPS &&
+      Math.abs(player.getHealth().current - player.getHealth().max) < ROUND_START_HP_EPS
+    if (fullHp && attackCooldown <= 0 && whiffRecoverT <= 0) {
+      roundStartEvaluateT = Math.max(roundStartEvaluateT, 0.14 + rng() * 0.08)
+    }
+
     if (bot.getHealth().current <= 0) {
       debugPhase = 'idle'
+      logPhaseTransition(debugPhase)
       lastBotDebug = {
         phase: debugPhase,
         targetId: player.getCharacterId(),
@@ -347,7 +357,7 @@ export function createCombatTestBotFrameSource(
         attackCooldown,
         thinkTimer,
         blockCooldown,
-        stickyMoveT,
+        stickyMoveT: retreatTimer,
         heavyDebt,
       }
       syncBotDebugOverlay(lastBotDebug)
@@ -355,6 +365,7 @@ export function createCombatTestBotFrameSource(
     }
 
     if (player.getHealth().current <= 0) {
+      logPhaseTransition('idle')
       lastBotDebug = {
         phase: 'idle',
         targetId: player.getCharacterId(),
@@ -363,7 +374,7 @@ export function createCombatTestBotFrameSource(
         attackCooldown: 0,
         thinkTimer: 0,
         blockCooldown: 0,
-        stickyMoveT: 0,
+        stickyMoveT: retreatTimer,
         heavyDebt: 0,
       }
       syncBotDebugOverlay(lastBotDebug)
@@ -371,11 +382,11 @@ export function createCombatTestBotFrameSource(
     }
 
     attackCooldown = Math.max(0, attackCooldown - dt)
-    aaCooldown = Math.max(0, aaCooldown - dt)
     blockCooldown = Math.max(0, blockCooldown - dt)
     thinkTimer = Math.max(0, thinkTimer - dt)
-    stickyMoveT = Math.max(0, stickyMoveT - dt)
+    retreatTimer = Math.max(0, retreatTimer - dt)
     whiffRecoverT = Math.max(0, whiffRecoverT - dt)
+    roundStartEvaluateT = Math.max(0, roundStartEvaluateT - dt)
     heavyDebt = Math.max(0, heavyDebt - dt * 0.42)
 
     const busy = isAttackBusy(bot.getAttackState())
@@ -387,40 +398,29 @@ export function createCombatTestBotFrameSource(
     const dist = Math.abs(bx - px)
     const towardPlayer = px > bx ? 1 : -1
 
+    const reach = strikeReachByKind(bot, player)
     const pAtk = player.getAttackState()
     const pStunned = player.isCombatStunned()
     const threat =
       playerThreatPhase(pAtk.phase) && !pStunned && player.grounded && pAtk.kind !== null
 
-    if (player.grounded) {
-      playerAirTime = 0
-      aaSpentThisJump = false
-    } else {
-      playerAirTime += dt
-    }
-
-    const punishStun = pStunned && dist < 1.05 && dist > PUNISH_MIN_D
-    const punishRecovery =
-      player.grounded &&
-      !pStunned &&
-      pAtk.phase === 'recovery' &&
-      dist < 0.96 &&
-      dist > PUNISH_MIN_D &&
-      rng() < t.punishRecoveryRoll * (0.55 + t.aggression * 0.25)
-
-    const punishMode = punishStun || punishRecovery
-
-    const reach = strikeReachByKind(bot, player)
-
-    const idealLo = t.preferredFightDistance - t.spacingBand
     const idealHi = t.preferredFightDistance + t.spacingBand
-    const pressureMode =
-      player.grounded &&
-      !pStunned &&
-      pAtk.phase === 'idle' &&
-      !threat &&
-      dist >= idealLo &&
-      dist <= idealHi
+
+    const canWalkToward =
+      (towardPlayer > 0 && bx < lim - EDGE_EPS) || (towardPlayer < 0 && bx > -lim + EDGE_EPS)
+    const canWalkAway =
+      (towardPlayer > 0 && bx > -lim + EDGE_EPS) || (towardPlayer < 0 && bx < lim - EDGE_EPS)
+
+    const moveToward = (): void => {
+      if (!canWalkToward) return
+      if (towardPlayer > 0) held.add('right')
+      else held.add('left')
+    }
+    const moveAway = (): void => {
+      if (!canWalkAway) return
+      if (towardPlayer > 0) held.add('left')
+      else held.add('right')
+    }
 
     if (!canAct) {
       if (busy) {
@@ -429,6 +429,7 @@ export function createCombatTestBotFrameSource(
       } else if (stunned) {
         debugPhase = 'idle'
       }
+      logPhaseTransition(debugPhase)
       heldBlockLastFrame = false
       wasAttackBusy = busy
       lastBotDebug = {
@@ -439,7 +440,7 @@ export function createCombatTestBotFrameSource(
         attackCooldown,
         thinkTimer,
         blockCooldown,
-        stickyMoveT,
+        stickyMoveT: retreatTimer,
         heavyDebt,
       }
       syncBotDebugOverlay(lastBotDebug)
@@ -458,8 +459,58 @@ export function createCombatTestBotFrameSource(
     }
     wasAttackBusy = busy
 
-    const wasBlockingPrev = heldBlockLastFrame
+    // 1) Round start evaluate: brief idle before first engage.
+    if (roundStartEvaluateT > 0) {
+      debugPhase = 'idle'
+      logPhaseTransition(debugPhase)
+      heldBlockLastFrame = false
+      lastBotDebug = {
+        phase: debugPhase,
+        targetId: player.getCharacterId(),
+        distance: dist,
+        chosenAttack: null,
+        attackCooldown,
+        thinkTimer,
+        blockCooldown,
+        stickyMoveT: retreatTimer,
+        heavyDebt,
+      }
+      syncBotDebugOverlay(lastBotDebug)
+      return snap
+    }
 
+    // 2) Optional short tactical retreat only when very close and recently blocking.
+    const wasBlockingPrev = heldBlockLastFrame
+    const allowRetreatStart =
+      wasBlockingPrev &&
+      dist < t.retreatAllowedWithinDistance &&
+      dist >= t.tooCloseDistance &&
+      retreatTimer <= 0 &&
+      rng() < 0.28
+    if (allowRetreatStart) {
+      retreatTimer = RETREAT_STEP_MIN + rng() * (RETREAT_STEP_MAX - RETREAT_STEP_MIN)
+    }
+    if (retreatTimer > 0) {
+      debugPhase = 'retreat'
+      moveAway()
+      logPhaseTransition(debugPhase)
+      heldBlockLastFrame = false
+      lastBotDebug = {
+        phase: debugPhase,
+        targetId: player.getCharacterId(),
+        distance: dist,
+        chosenAttack: null,
+        attackCooldown,
+        thinkTimer,
+        blockCooldown,
+        stickyMoveT: retreatTimer,
+        heavyDebt,
+      }
+      syncBotDebugOverlay(lastBotDebug)
+      return snap
+    }
+
+    // 3) Imperfect block on threat (never perfect or constant).
     if (blockCooldown <= 0 && threat && dist < t.threatMaxDistance) {
       const kind = pAtk.kind
       const base = blockChanceForPlayerAttack(kind, t)
@@ -471,6 +522,7 @@ export function createCombatTestBotFrameSource(
         heldBlockLastFrame = true
         blockCooldown = t.blockCooldownMin + rng() * (t.blockCooldownMax - t.blockCooldownMin)
         debugPhase = 'block'
+        logPhaseTransition(debugPhase)
         lastBotDebug = {
           phase: debugPhase,
           targetId: player.getCharacterId(),
@@ -479,7 +531,7 @@ export function createCombatTestBotFrameSource(
           attackCooldown,
           thinkTimer,
           blockCooldown,
-          stickyMoveT,
+          stickyMoveT: retreatTimer,
           heavyDebt,
         }
         syncBotDebugOverlay(lastBotDebug)
@@ -488,300 +540,82 @@ export function createCombatTestBotFrameSource(
     }
 
     heldBlockLastFrame = false
-
-    const disengageAfterBlock = wasBlockingPrev && rng() < 0.26 + t.aggression * 0.08
-
-    const aaBand =
-      dist >= AA_MIN_D && dist <= AA_MAX_D && aaCooldown <= 0 && attackCooldown <= 0
-    const inAaTimeWindow =
-      !player.grounded &&
-      !aaSpentThisJump &&
-      playerAirTime >= AA_REACT_MIN &&
-      playerAirTime <= AA_REACT_MAX
-    const aaCommit =
-      !threat &&
-      !punishMode &&
-      aaBand &&
-      inAaTimeWindow &&
-      thinkTimer <= 0 &&
-      whiffRecoverT <= 0 &&
-      rng() < 0.48 * Math.min(1, dt * 13) * (0.75 + t.aggression * 0.35)
-
-    if (aaCommit) {
-      aaSpentThisJump = true
-      debugPhase = 'anti_air'
-      if (dist > reach.light * 0.42) {
-        if (bx > px) held.add('left')
-        else held.add('right')
-      }
-      if (rng() < 0.72) {
-        const prevK = lastKind
-        pressed.add('light')
-        lastKind = 'light'
-        sameAttackStreak = prevK === 'light' ? sameAttackStreak + 1 : 1
-        attackCooldown = 0.18 + rng() * 0.2
-        aaCooldown = AA_COOLDOWN_AFTER + rng() * 0.2
-        thinkTimer =
-          t.thinkGapMin * personality + rng() * (t.thinkGapMax - t.thinkGapMin) * personality
-        debugChosen = 'light'
-      }
-      lastBotDebug = {
-        phase: debugPhase,
-        targetId: player.getCharacterId(),
-        distance: dist,
-        chosenAttack: debugChosen,
-        attackCooldown,
-        thinkTimer,
-        blockCooldown,
-        stickyMoveT,
-        heavyDebt,
-      }
-      syncBotDebugOverlay(lastBotDebug)
-      return snap
-    }
-
-    const nearWallRight = bx > lim - t.wallAvoidMargin
-    const nearWallLeft = bx < -lim + t.wallAvoidMargin
-
-    const runawayRisk =
-      dist > t.forceApproachBeyondDistance ||
-      (Math.abs(bx) > lim - t.edgeLeashInset && dist > 0.95)
-    const isRetreatSticky =
-      stickyMoveTowardPlayer !== 0 && stickyMoveTowardPlayer * towardPlayer === -1
-    if (runawayRisk && isRetreatSticky && dist >= t.tooCloseDistance) {
-      stickyMoveTowardPlayer = towardPlayer
-      stickyMoveT = Math.max(stickyMoveT, 0.11)
+    // 4) Deterministic movement tree: too far -> approach, ideal -> hold, too close -> micro reposition.
+    if (dist > idealHi) {
       debugPhase = 'approach'
-    }
-
-    const needNewSticky =
-      stickyMoveT <= 0 ||
-      punishMode ||
-      (pressureMode && rng() < 0.04 * dt * 60) ||
-      (dist > t.strideInBeyond + 0.05 && stickyMoveTowardPlayer !== towardPlayer)
-
-    if (needNewSticky && !punishMode) {
-      let intent = 0
-      if (dist > t.strideInBeyond * (0.92 + (1 - personality) * 0.04)) {
-        intent = towardPlayer
-        debugPhase = 'approach'
-      } else if (dist < t.tooCloseDistance) {
-        intent = -towardPlayer
-        debugPhase = 'reposition'
-      } else if (pressureMode) {
-        if (rng() < 0.72 + t.aggression * 0.1) {
-          intent = towardPlayer
-          debugPhase = 'pressure'
-        } else if (dist < t.retreatAllowedWithinDistance && rng() < 0.42) {
-          intent = -towardPlayer
-          debugPhase = 'reposition'
-        } else {
-          intent = towardPlayer
-          debugPhase = 'pressure'
-        }
-      } else if (dist > idealHi) {
-        intent = towardPlayer
-        debugPhase = 'approach'
-      } else if (dist < idealLo && dist >= t.tooCloseDistance) {
-        intent = towardPlayer
-        debugPhase = 'pressure'
-      } else if (
-        intent === 0 &&
-        dist <= t.strideInBeyond &&
-        dist >= t.tooCloseDistance &&
-        rng() < 0.38 + t.aggression * 0.22
-      ) {
-        intent = towardPlayer
-        debugPhase = 'approach'
-      }
-
-      if (intent === towardPlayer && towardPlayer === 1 && nearWallRight) intent = -1
-      else if (intent === towardPlayer && towardPlayer === -1 && nearWallLeft) intent = 1
-      else if (intent === -towardPlayer && towardPlayer === 1 && nearWallLeft && rng() < 0.65) {
-        intent = 1
-      } else if (intent === -towardPlayer && towardPlayer === -1 && nearWallRight && rng() < 0.65) {
-        intent = -1
-      }
-
-      if (
-        disengageAfterBlock &&
-        dist < t.retreatAllowedWithinDistance + 0.06 &&
-        dist >= t.tooCloseDistance
-      ) {
-        intent = -towardPlayer
-        debugPhase = 'reposition'
-      }
-
-      if (runawayRisk && intent === -towardPlayer && dist >= t.tooCloseDistance) {
-        intent = towardPlayer
-        debugPhase = 'approach'
-      }
-
-      stickyMoveTowardPlayer = intent
-      const sm =
-        t.stickyMoveMin * (1.1 - t.aggression * 0.08) +
-        rng() * (t.stickyMoveMax - t.stickyMoveMin) * personality
-      stickyMoveT = Math.max(0.08, sm)
-    } else if (punishMode && dist < PUNISH_MAX_D) {
-      debugPhase = 'punish'
-      if (dist > PUNISH_MIN_D + 0.05) {
-        stickyMoveTowardPlayer = towardPlayer
-        if (bx > px) held.add('left')
-        else held.add('right')
-      }
-    } else if (stickyMoveTowardPlayer !== 0) {
-      if (stickyMoveTowardPlayer === 1) {
-        if (bx > px) held.add('left')
-        else held.add('right')
-      } else {
-        if (bx > px) held.add('right')
-        else held.add('left')
-      }
-      if (debugPhase === 'idle') {
-        debugPhase = dist > idealHi ? 'approach' : dist < t.tooCloseDistance ? 'reposition' : 'pressure'
-      }
-    }
-
-    const respectRecovery =
-      pAtk.phase === 'recovery' &&
-      player.grounded &&
-      dist < 0.5 &&
-      rng() < 0.2 * (1.05 - t.aggression * 0.15)
-
-    if (respectRecovery && stickyMoveTowardPlayer === 0) {
-      if (bx > px) held.add('right')
-      else held.add('left')
-    }
-
-    if (
-      player.grounded &&
-      dist > 0.82 &&
-      dist < 1.18 &&
-      !punishMode &&
-      attackCooldown <= 0 &&
-      rng() < 0.0018 * (0.8 + t.aggression * 0.4)
-    ) {
-      pressed.add('jump')
-    }
-
-    if (attackCooldown > 0 || whiffRecoverT > 0) {
-      lastBotDebug = {
-        phase: debugPhase,
-        targetId: player.getCharacterId(),
-        distance: dist,
-        chosenAttack: null,
-        attackCooldown,
-        thinkTimer,
-        blockCooldown,
-        stickyMoveT,
-        heavyDebt,
-      }
-      syncBotDebugOverlay(lastBotDebug)
-      return snap
-    }
-
-    if (thinkTimer > 0 && !punishMode) {
-      lastBotDebug = {
-        phase: debugPhase,
-        targetId: player.getCharacterId(),
-        distance: dist,
-        chosenAttack: null,
-        attackCooldown,
-        thinkTimer,
-        blockCooldown,
-        stickyMoveT,
-        heavyDebt,
-      }
-      syncBotDebugOverlay(lastBotDebug)
-      return snap
-    }
-
-    const punishThinkFail = punishMode && rng() < 0.12 * (1.1 - t.aggression)
-    if (punishThinkFail) {
-      thinkTimer =
-        t.thinkGapMin * 0.35 * personality + rng() * 0.05 * personality
-      lastBotDebug = {
-        phase: 'punish',
-        targetId: player.getCharacterId(),
-        distance: dist,
-        chosenAttack: null,
-        attackCooldown,
-        thinkTimer,
-        blockCooldown,
-        stickyMoveT,
-        heavyDebt,
-      }
-      syncBotDebugOverlay(lastBotDebug)
-      return snap
-    }
-
-    const kind = pickAttackKind({
-      dist,
-      reach,
-      punishMode,
-      rng,
-      t,
-      lastKind,
-      sameAttackStreak,
-      heavyDebt,
-    })
-
-    if (!kind) {
-      thinkTimer =
-        t.thinkGapMin * personality + rng() * (t.thinkGapMax - t.thinkGapMin) * personality
-      lastBotDebug = {
-        phase: debugPhase,
-        targetId: player.getCharacterId(),
-        distance: dist,
-        chosenAttack: null,
-        attackCooldown,
-        thinkTimer,
-        blockCooldown,
-        stickyMoveT,
-        heavyDebt,
-      }
-      syncBotDebugOverlay(lastBotDebug)
-      return snap
-    }
-
-    const prevKind = lastKind
-    pressed.add(kind)
-    lastKind = kind
-    sameAttackStreak = kind === prevKind ? sameAttackStreak + 1 : 1
-    debugPhase = 'attack'
-    debugChosen = kind
-    swingStarted = true
-
-    if (kind === 'heavy') {
-      heavyDebt += 1
+      moveToward()
+    } else if (dist < t.tooCloseDistance) {
+      debugPhase = 'reposition'
+      moveAway()
     } else {
-      heavyDebt = Math.max(0, heavyDebt - 0.35)
+      debugPhase = 'hold'
     }
 
-    let cd = 0.38 + rng() * 0.34
-    if (kind === 'heavy') {
-      cd += t.heavyExtraCooldownMin + rng() * (t.heavyExtraCooldownMax - t.heavyExtraCooldownMin)
+    // 5) Attack only when in range and timers are ready.
+    const attackReady = attackCooldown <= 0 && whiffRecoverT <= 0 && thinkTimer <= 0
+    const inAnyAttackRange = dist <= reach.heavy * 0.9
+    const punishMode =
+      pStunned ||
+      (pAtk.phase === 'recovery' &&
+        player.grounded &&
+        dist < 0.96 &&
+        dist > t.tooCloseDistance * 0.75 &&
+        rng() < t.punishRecoveryRoll)
+
+    if (attackReady && inAnyAttackRange) {
+      const kind = pickAttackKind({
+        dist,
+        reach,
+        punishMode,
+        rng,
+        t,
+        lastKind,
+        sameAttackStreak,
+        heavyDebt,
+      })
+      if (kind) {
+        const prevKind = lastKind
+        pressed.add(kind)
+        lastKind = kind
+        sameAttackStreak = kind === prevKind ? sameAttackStreak + 1 : 1
+        debugPhase = 'attack'
+        debugChosen = kind
+        swingStarted = true
+
+        if (kind === 'heavy') {
+          heavyDebt += 1
+        } else {
+          heavyDebt = Math.max(0, heavyDebt - 0.35)
+        }
+
+        let cd = 0.36 + rng() * 0.26
+        if (kind === 'heavy') {
+          cd += t.heavyExtraCooldownMin + rng() * (t.heavyExtraCooldownMax - t.heavyExtraCooldownMin)
+        }
+        if (kind === 'special') cd += 0.28 + rng() * 0.26
+        if (punishMode) cd *= 0.78 + rng() * 0.12
+        attackCooldown = cd
+        thinkTimer =
+          t.reactionDelayMin * personality +
+          rng() * (t.reactionDelayMax - t.reactionDelayMin) * personality +
+          (t.thinkGapMin + rng() * (t.thinkGapMax - t.thinkGapMin)) * personality
+      }
     }
-    if (kind === 'special') cd += 0.32 + rng() * 0.38
-    if (punishStun) cd *= 0.7 + rng() * 0.12
-    else if (punishRecovery) cd *= 0.78 + rng() * 0.1
-    else if (pressureMode) cd *= 0.88 + rng() * 0.08
 
-    attackCooldown = cd
-    thinkTimer =
-      t.reactionDelayMin * personality +
-      rng() * (t.reactionDelayMax - t.reactionDelayMin) * personality +
-      (t.thinkGapMin + rng() * (t.thinkGapMax - t.thinkGapMin)) * personality
+    // 6) Safety clamp: if already at edge, suppress outward movement.
+    if (bx >= lim - EDGE_EPS) held.delete('right')
+    if (bx <= -lim + EDGE_EPS) held.delete('left')
 
+    logPhaseTransition(debugPhase)
     lastBotDebug = {
       phase: debugPhase,
       targetId: player.getCharacterId(),
       distance: dist,
-      chosenAttack: kind,
+      chosenAttack: debugChosen,
       attackCooldown,
       thinkTimer,
       blockCooldown,
-      stickyMoveT,
+      stickyMoveT: retreatTimer,
       heavyDebt,
     }
     syncBotDebugOverlay(lastBotDebug)

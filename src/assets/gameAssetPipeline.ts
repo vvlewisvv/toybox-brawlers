@@ -1,5 +1,6 @@
 import {
   isRosterGlbFighterId,
+  probeRequiredRosterGlbUrls,
   preloadAllRosterGlbBoot,
   preloadAllRosterGlbCombat,
   preloadRosterGlbRoundEnd,
@@ -40,6 +41,7 @@ function rescanActiveGlbFighters(): void {
  */
 export async function loadBootAssets(): Promise<void> {
   console.info('[assets] boot stage start')
+  await probeRequiredRosterGlbUrls()
   await preloadAllRosterGlbBoot()
   rescanActiveGlbFighters()
   console.info('[assets] boot stage done')
