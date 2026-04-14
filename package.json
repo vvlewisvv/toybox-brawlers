@@ -1,0 +1,21 @@
+{
+  "name": "plushdown",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node server/roomServer.mjs",
+    "build": "node scripts/assert-violence-visual-only.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.3",
+    "ws": "^8.18.0"
+  }
+}
