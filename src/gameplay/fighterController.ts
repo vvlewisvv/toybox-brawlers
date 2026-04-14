@@ -710,6 +710,11 @@ export function createFighter(
       attackHooks,
       runtime.attackFrames,
     )
+    if (attackState.phase === 'idle') {
+      // Ensure no stale strike flags carry over into idle / next swing.
+      strikeConsumed = false
+      swingConnected = false
+    }
     applyMeshFromState(snapshot)
   }
 

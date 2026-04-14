@@ -24,5 +24,18 @@ export function createBrambleGlbMesh(): PlaceholderFighterMesh {
     combatBodyProxyName: 'BrambleCombatBodyProxy',
     useIdleAlternation: false,
     stagedGlbLoading: true,
+    extraAnimOptions: {
+      // Bramble-only: lock idle to neutral idle and pin attack kinds to explicit clips.
+      idlePlaybackScale: 0.7,
+      strictIdleOnly: true,
+      strictAttackClipByKind: true,
+      restartAttackClipOnStartup: true,
+      clipPatterns: {
+        idle: ['idle_', 'idle', 'neutral', 'stand'],
+        light: ['jab_', 'jab', 'attacklight', 'atklight'],
+        heavy: ['atkmed_', 'atkmed', 'attackmedium'],
+        special: ['atkheavy_', 'atkheavy', 'attackheavy'],
+      },
+    },
   })
 }

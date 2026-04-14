@@ -10,9 +10,9 @@ export const CHARACTER_BIBI: CharacterDefinition = {
   id: 'bibi',
   displayName: 'Bibi',
   movement: {
-    walkSpeed: 5.78,
-    crouchSpeedFactor: 0.46,
-    airControl: 0.62,
+    walkSpeed: 4.624,
+    crouchSpeedFactor: 0.368,
+    airControl: 0.496,
     pushHalfX: 0.29,
   },
   jump: {
@@ -28,7 +28,7 @@ export const CHARACTER_BIBI: CharacterDefinition = {
         recoveryOnConnect: 0.07,
         recoveryOnWhiff: 0.12,
       },
-      hitbox: { reach: 0.4, halfX: 0.22, halfY: 0.3, halfZ: 0.16 },
+      hitbox: { reach: 0.528, halfX: 0.29, halfY: 0.396, halfZ: 0.211 },
       damage: 4,
       hitStun: 0.14,
       blockStunDefender: 0.085,
@@ -36,12 +36,14 @@ export const CHARACTER_BIBI: CharacterDefinition = {
     },
     heavy: {
       timings: {
-        startup: 0.11,
-        active: 0.06,
-        recoveryOnConnect: 0.11,
-        recoveryOnWhiff: 0.24,
+        // Medium attack: deterministic connect window aligned to visual impact.
+        // Keep active long enough to avoid frame-skip misses on variable frame times.
+        startup: 0.126,
+        active: 0.04,
+        recoveryOnConnect: 0.129,
+        recoveryOnWhiff: 0.289,
       },
-      hitbox: { reach: 0.52, halfX: 0.28, halfY: 0.38, halfZ: 0.18 },
+      hitbox: { reach: 0.686, halfX: 0.37, halfY: 0.502, halfZ: 0.238 },
       damage: 9,
       hitStun: 0.22,
       blockStunDefender: 0.13,
@@ -49,12 +51,13 @@ export const CHARACTER_BIBI: CharacterDefinition = {
     },
     special: {
       timings: {
-        startup: 0.14,
-        active: 0.075,
-        recoveryOnConnect: 0.16,
-        recoveryOnWhiff: 0.32,
+        // Heavy attack: additional 30% slowdown stacked on previous 30%.
+        startup: 0.415,
+        active: 0.127,
+        recoveryOnConnect: 0.27,
+        recoveryOnWhiff: 0.541,
       },
-      hitbox: { reach: 0.5, halfX: 0.3, halfY: 0.4, halfZ: 0.2 },
+      hitbox: { reach: 0.66, halfX: 0.396, halfY: 0.528, halfZ: 0.264 },
       damage: 13,
       hitStun: 0.28,
       blockStunDefender: 0.16,

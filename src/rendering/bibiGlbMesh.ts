@@ -24,5 +24,23 @@ export function createBibiGlbMesh(): PlaceholderFighterMesh {
     combatBodyProxyName: 'BibiCombatBodyProxy',
     useIdleAlternation: false,
     stagedGlbLoading: true,
+    extraAnimOptions: {
+      // Bibi balance: medium faster visually, heavy slower visually.
+      // (In gameplay mapping, "medium" is `heavy` and "heavy" is `special`.)
+      attackPlaybackScaleByKind: {
+        heavy: 1.8,
+        special: 0.69,
+      },
+      restartAttackClipOnStartup: true,
+      strictAttackClipByKind: true,
+      // Prevent idle from ever selecting attack clips after staged clip rescans.
+      strictIdleOnly: true,
+      clipPatterns: {
+        idle: ['idle_', 'idle', 'neutral', 'stand'],
+        light: ['jab_', 'jab', 'attacklight', 'atklight'],
+        heavy: ['atkmed_', 'atkmed', 'attackmedium'],
+        special: ['atkheavy_', 'atkheavy', 'attackheavy'],
+      },
+    },
   })
 }

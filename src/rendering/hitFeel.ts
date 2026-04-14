@@ -18,13 +18,19 @@ import { TOYBOX_FIGHT_CAMERA_POS, TOYBOX_FIGHT_LOOK_AT } from '../scenes/toyboxA
  * These values apply to every violence mode; {@link getViolenceMode} must not branch here.
  */
 export const HIT_FEEL_TUNING = {
-  /** ~80ms hit freeze — readable impact without dragging neutral. */
-  hitStopHit: 0.082,
-  hitStopBlock: 0.055,
-  shakeHit: 0.155,
-  shakeBlock: 0.065,
+  /** Micro hitstop on confirmed hit only (light/medium/heavy scaled in triggerImpact). */
+  hitStopLight: 0.04,
+  hitStopMedium: 0.06,
+  hitStopHeavy: 0.1,
+  /** Subtle camera shake amplitudes by hit strength. */
+  shakeLight: 0.026,
+  shakeMedium: 0.044,
+  shakeHeavy: 0.07,
   /** Decay only after hit-stop ends so the hold reads as one beat. */
-  shakeDecayPerSec: 12,
+  shakeDecayPerSec: 18,
+  /** Combo dampening: avoid messy over-shake on rapid successive hits. */
+  shakeRetriggerCooldownMs: 70,
+  shakeRetriggerDampen: 0.65,
   screenFlashMs: 108,
   sparkLife: 0.26,
   sparkCount: 34,
@@ -419,6 +425,7 @@ export class HitFeelController {
   private fightZoomPull = 0
   private bursts: Burst[] = []
   private punchTimer: ReturnType<typeof setTimeout> | null = null
+  private lastShakeTriggerAtMs = -1
 
   constructor(opts: {
     camera: PerspectiveCamera
@@ -494,18 +501,30 @@ export class HitFeelController {
     this.lastImpactBlocked = blocked
     this.lastStrikeDir.copy(strikeDir)
 
-    const stop = blocked
-      ? t.hitStopBlock
-      : strikeKind === 'special'
-        ? 0.112
-        : strikeKind === 'heavy'
-          ? 0.096
-          : t.hitStopHit
-    this.hitStopRemaining = Math.max(this.hitStopRemaining, stop)
+    // Apply micro hitstop + camera shake on confirmed hit only.
+    if (!blocked) {
+      const stop =
+        strikeKind === 'special'
+          ? t.hitStopHeavy
+          : strikeKind === 'heavy'
+            ? t.hitStopMedium
+            : t.hitStopLight
+      this.hitStopRemaining = Math.max(this.hitStopRemaining, stop)
 
-    const sh =
-      blocked ? t.shakeBlock : strikeKind === 'special' ? t.shakeHit * 1.18 : strikeKind === 'heavy' ? t.shakeHit * 1.08 : t.shakeHit
-    this.shakeMagnitude = Math.max(this.shakeMagnitude, sh)
+      const baseShake =
+        strikeKind === 'special'
+          ? t.shakeHeavy
+          : strikeKind === 'heavy'
+            ? t.shakeMedium
+            : t.shakeLight
+      const nowMs = performance.now()
+      const rapidRetrigger =
+        this.lastShakeTriggerAtMs > 0 &&
+        nowMs - this.lastShakeTriggerAtMs < t.shakeRetriggerCooldownMs
+      const sh = rapidRetrigger ? baseShake * t.shakeRetriggerDampen : baseShake
+      this.shakeMagnitude = Math.max(this.shakeMagnitude, sh)
+      this.lastShakeTriggerAtMs = nowMs
+    }
 
     const zoomBase =
       strikeKind === 'special' ? 0.36 : strikeKind === 'heavy' ? 0.22 : 0.12
@@ -524,7 +543,7 @@ export class HitFeelController {
   triggerKoMoment(): void {
     const t = HIT_FEEL_TUNING
     this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.1)
-    this.shakeMagnitude = Math.max(this.shakeMagnitude, t.shakeHit * 1.45)
+    this.shakeMagnitude = Math.max(this.shakeMagnitude, t.shakeHeavy * 1.45)
     this.fightZoomPull = Math.max(this.fightZoomPull, 0.48)
     this.applyCameraShake()
   }
@@ -592,6 +611,7 @@ export class HitFeelController {
     this.shakeMagnitude = 0
     this.framingDx = 0
     this.fightZoomPull = 0
+    this.lastShakeTriggerAtMs = -1
     if (this.punchTimer) {
       clearTimeout(this.punchTimer)
       this.punchTimer = null

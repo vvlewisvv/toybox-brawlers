@@ -73,6 +73,24 @@ export type ImportedGlbAnimationOptions = {
    * Roster GLB pipeline: clips arrive in stages; keep mixer alive even if the first batch is only bind-pose junk.
    */
   stagedLoading?: boolean
+  /** Per-fighter attack playback tuning; multiplies computed attack clip timescale. */
+  attackPlaybackScaleByKind?: Partial<Record<AttackKind, number>>
+  /**
+   * Optional explicit clip-name patterns (first match wins) to avoid fuzzy mis-mapping.
+   * Useful when a roster asset has ambiguous clip names.
+   */
+  clipPatterns?: Partial<Record<'idle' | 'walk' | 'run' | 'light' | 'heavy' | 'special', readonly string[]>>
+  /** If true, idle never falls back to walk / arbitrary legacy clip. */
+  strictIdleOnly?: boolean
+  /**
+   * If true, when a new attack starts (startup edge), restart the attack clip from frame 0
+   * even when the same clip/action was previously active.
+   */
+  restartAttackClipOnStartup?: boolean
+  /** If true, do not fallback heavy<->special clip selection when one is missing. */
+  strictAttackClipByKind?: boolean
+  /** Optional per-fighter idle loop playback scale (1 = unchanged). */
+  idlePlaybackScale?: number
 }
 
 function norm(s: string): string {
@@ -252,15 +270,20 @@ export function createImportedGlbAnimationDriver(
   }
 
   function refreshClipBindings(): void {
+    const p = options?.clipPatterns
     usable = buildUsable()
     if (useIdleAlternation) {
       byIdle = idleAlternationClips[0]
     } else if (idleAltRaw.length === 1) {
       byIdle = idleAltRaw[0]
+    } else if (p?.idle?.length) {
+      byIdle = pickClip(usable, p.idle)
     } else {
       byIdle = pickFightingIdle(usable)
     }
-    byWalk = pickClip(usable, [
+    byWalk = p?.walk?.length
+      ? pickClip(usable, p.walk)
+      : pickClip(usable, [
       'walk',
       'jog',
       'move',
@@ -269,8 +292,10 @@ export function createImportedGlbAnimationDriver(
       'sneak',
       'stride',
     ])
-    byRun = pickClip(usable, ['run', 'sprint', 'dash'])
-    byLight = pickClip(usable, [
+    byRun = p?.run?.length ? pickClip(usable, p.run) : pickClip(usable, ['run', 'sprint', 'dash'])
+    byLight = p?.light?.length
+      ? pickClip(usable, p.light)
+      : pickClip(usable, [
       'jab',
       'punch',
       'hook',
@@ -286,7 +311,9 @@ export function createImportedGlbAnimationDriver(
       'light',
       'hit1',
     ])
-    byHeavy = pickClip(usable, [
+    byHeavy = p?.heavy?.length
+      ? pickClip(usable, p.heavy)
+      : pickClip(usable, [
       'atkmed',
       'kick',
       'roundhouse',
@@ -302,7 +329,9 @@ export function createImportedGlbAnimationDriver(
       'slam',
       'attack2',
     ])
-    bySpecial = pickClip(usable, [
+    bySpecial = p?.special?.length
+      ? pickClip(usable, p.special)
+      : pickClip(usable, [
       'atkheavy',
       'spin',
       '360',
@@ -341,9 +370,12 @@ export function createImportedGlbAnimationDriver(
     ])
     byWin = pickClip(usable, ['win', 'victory', 'triumph', 'celebrat', 'cheer'])
 
-    useSlowWalkAsIdle = !byIdle && !useIdleAlternation && !!byWalk
+    const strictIdleOnly = options?.strictIdleOnly === true
+    useSlowWalkAsIdle = !strictIdleOnly && !byIdle && !useIdleAlternation && !!byWalk
     legacyIdleClip =
-      !byIdle && !useIdleAlternation && !useSlowWalkAsIdle ? usable[0] : undefined
+      !strictIdleOnly && !byIdle && !useIdleAlternation && !useSlowWalkAsIdle
+        ? usable[0]
+        : undefined
 
     clipFlags.hasLightClip = !!byLight
     clipFlags.hasHeavyClip = !!byHeavy
@@ -376,6 +408,7 @@ export function createImportedGlbAnimationDriver(
 
   const fade = 0.18
   const fadeAttack = 0.12
+  const idlePlaybackScale = Math.max(0.2, Math.min(2.5, options?.idlePlaybackScale ?? 1))
 
   function playClip(
     clip: AnimationClip | undefined,
@@ -383,6 +416,7 @@ export function createImportedGlbAnimationDriver(
     weight = 1,
     timeScale = 1,
     crossFadeDur = fade,
+    forceRestart = false,
   ): void {
     if (!clip) return
     const next = mixer.clipAction(clip)
@@ -401,6 +435,7 @@ export function createImportedGlbAnimationDriver(
       current = next
     } else if (sameAction && current) {
       current.setEffectiveTimeScale(timeScale)
+      if (forceRestart) current.reset().play()
     } else {
       next.setEffectiveTimeScale(timeScale)
       next.reset().play()
@@ -428,7 +463,7 @@ export function createImportedGlbAnimationDriver(
     next.setEffectiveWeight(weight)
     next.setLoop(LoopOnce, 1)
     next.clampWhenFinished = true
-    next.setEffectiveTimeScale(1)
+    next.setEffectiveTimeScale(idlePlaybackScale)
     if (current && current !== next) {
       next.reset().play()
       current.crossFadeTo(next, crossFadeDur, false)
@@ -451,11 +486,11 @@ export function createImportedGlbAnimationDriver(
       return
     }
     if (byIdle) {
-      playClip(byIdle, true, 1, 1, fade)
+      playClip(byIdle, true, 1, idlePlaybackScale, fade)
       return
     }
     if (legacyIdleClip) {
-      playClip(legacyIdleClip, true, 1, 1, fade)
+      playClip(legacyIdleClip, true, 1, idlePlaybackScale, fade)
     }
   }
 
@@ -481,9 +516,14 @@ export function createImportedGlbAnimationDriver(
 
   function attackTimeScale(clip: AnimationClip, s: ImportedGlbAnimCombatSnapshot): number {
     const window = s.attackCycleDuration
-    if (!window || window < 1e-3) return 1
+    const atkKind = s.attackKind
+    const kindMul =
+      atkKind && options?.attackPlaybackScaleByKind?.[atkKind] != null
+        ? options.attackPlaybackScaleByKind[atkKind]!
+        : 1
+    if (!window || window < 1e-3) return kindMul
     const r = clip.duration / window
-    return Math.max(0.5, Math.min(2.75, r))
+    return Math.max(0.5, Math.min(2.75, r * kindMul))
   }
 
   function winTimeScale(clip: AnimationClip, s: ImportedGlbAnimCombatSnapshot): number {
@@ -493,8 +533,9 @@ export function createImportedGlbAnimationDriver(
   }
 
   function clipForAttackKind(kind: AttackKind): AnimationClip | undefined {
-    if (kind === 'heavy') return byHeavy ?? bySpecial
-    if (kind === 'special') return bySpecial ?? byHeavy
+    const strictKindMap = options?.strictAttackClipByKind === true
+    if (kind === 'heavy') return strictKindMap ? byHeavy : byHeavy ?? bySpecial
+    if (kind === 'special') return strictKindMap ? bySpecial : bySpecial ?? byHeavy
     return byLight ?? byHeavy
   }
 
@@ -556,6 +597,7 @@ export function createImportedGlbAnimationDriver(
   }
 
   function syncFromState(s: ImportedGlbAnimCombatSnapshot): void {
+      const prevSnapshot = lastSnapshot
       lastSnapshot = s
 
       if (s.attackPhase === 'idle') {
@@ -565,10 +607,10 @@ export function createImportedGlbAnimationDriver(
       if (s.defeated) {
         if (byKo) playClip(byKo, false, 1, 1, fadeAttack)
         else if (useIdleAlternation && idleAlternationClips[0])
-          playClip(idleAlternationClips[0], true, 0.35, 1, fade)
-        else if (byIdle) playClip(byIdle, true, 0.35, 1, fade)
+          playClip(idleAlternationClips[0], true, 0.35, idlePlaybackScale, fade)
+        else if (byIdle) playClip(byIdle, true, 0.35, idlePlaybackScale, fade)
         else if (useSlowWalkAsIdle && byWalk) playClip(byWalk, true, 0.35, 0.08, fade)
-        else if (legacyIdleClip) playClip(legacyIdleClip, true, 0.35, 1, fade)
+        else if (legacyIdleClip) playClip(legacyIdleClip, true, 0.35, idlePlaybackScale, fade)
         else {
           mixer.stopAllAction()
           current = null
@@ -596,7 +638,19 @@ export function createImportedGlbAnimationDriver(
         const atk = clipForAttackKind(s.attackKind)
         if (atk) {
           const ts = attackTimeScale(atk, s)
-          playClip(atk, false, 1, ts, fadeAttack)
+          const attackStartupEdge =
+            s.attackPhase === 'startup' &&
+            (!prevSnapshot ||
+              prevSnapshot.attackPhase === 'idle' ||
+              prevSnapshot.attackKind !== s.attackKind)
+          playClip(
+            atk,
+            false,
+            1,
+            ts,
+            fadeAttack,
+            !!options?.restartAttackClipOnStartup && attackStartupEdge,
+          )
           return
         }
       }

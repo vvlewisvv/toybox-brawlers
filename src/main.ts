@@ -1148,7 +1148,10 @@ const stage = startMinimalStage(canvas, {
           sfxFootAcc = 0
         }
 
-        resolvePushboxPair(playerFighter, botFighter)
+        resolvePushboxPair(playerFighter, botFighter, 4, {
+          aMoveIntentX: readMoveAxis(snapSim),
+          bMoveIntentX: readMoveAxis(botSnapSim),
+        })
         const vP = computeFighterCollisionVolumes(playerFighter, botFighter)
         const vB = computeFighterCollisionVolumes(botFighter, playerFighter)
         const rP = resolveStrike(playerFighter, botFighter, snapSim, botSnapSim, vP, vB)

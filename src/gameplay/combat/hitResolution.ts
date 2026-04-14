@@ -11,6 +11,39 @@ export type StrikeResolveResult =
 const tmpImpact = new Vector3()
 const tmpStrikeDir = new Vector3()
 
+type PushbackPair = {
+  attacker: number
+  defender: number
+}
+
+function pushbackForStrike(kind: AttackKind, blocked: boolean): PushbackPair {
+  if (blocked) {
+    // Block pushback: only heavy gets a small push.
+    if (kind === 'special') return { attacker: 0.016, defender: 0.052 }
+    return { attacker: 0, defender: 0 }
+  }
+  // Hit pushback by strength (light, medium, heavy).
+  if (kind === 'special') return { attacker: 0.028, defender: 0.19 }
+  if (kind === 'heavy') return { attacker: 0.02, defender: 0.11 }
+  return { attacker: 0.014, defender: 0.085 }
+}
+
+function applyStrikePushback(
+  attacker: PlaceholderFighter,
+  defender: PlaceholderFighter,
+  strikeDir: Vector3,
+  kind: AttackKind,
+  blocked: boolean,
+): void {
+  const p = pushbackForStrike(kind, blocked)
+  if (p.attacker > 0) {
+    attacker.shiftPlanarX(-strikeDir.x * p.attacker)
+  }
+  if (p.defender > 0) {
+    defender.shiftPlanarX(strikeDir.x * p.defender)
+  }
+}
+
 function planarStrikeDir(
   attacker: PlaceholderFighter,
   defender: PlaceholderFighter,
@@ -85,6 +118,7 @@ export function resolveStrike(
     defender.applyDamage(strike.damage)
     defender.applyHitStun(strike.hitStun)
   }
+  applyStrikePushback(attacker, defender, strikeDir, kind, blocked)
 
   attacker.markStrikeConsumed()
   return { ok: true, blocked, impact, strikeDir, strikeKind: kind }
