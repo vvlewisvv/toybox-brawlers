@@ -26,7 +26,8 @@ export class MobileTouchInput {
   private actionBtnByAction = new Map<InputAction, HTMLButtonElement>()
 
   private attached = false
-  private enabled = false
+  private touchCapable = false
+  private controlsActive = false
 
   private joystickPointerId: number | null = null
   private joystickCx = 0
@@ -44,11 +45,12 @@ export class MobileTouchInput {
   attach(host: HTMLElement): void {
     if (this.attached) return
     this.attached = true
-    this.enabled = supportsTouchControls()
-    if (!this.enabled) return
+    this.touchCapable = supportsTouchControls()
+    if (!this.touchCapable) return
 
     const root = document.createElement('div')
     root.className = 'mobile-controls'
+    root.classList.add('mobile-controls--hidden')
     root.dataset.mobileControls = ''
 
     const left = document.createElement('div')
@@ -128,6 +130,15 @@ export class MobileTouchInput {
   }
 
   readFrame(): FrameSnapshot {
+    if (!this.controlsActive) {
+      this.downEdge.clear()
+      this.upEdge.clear()
+      return {
+        held: new Set(),
+        pressed: new Set(),
+        released: new Set(),
+      }
+    }
     const pressed = new Set(this.downEdge)
     const released = new Set(this.upEdge)
     this.downEdge.clear()
@@ -139,8 +150,22 @@ export class MobileTouchInput {
     }
   }
 
+  setCombatActive(active: boolean): void {
+    if (!this.touchCapable) return
+    if (this.controlsActive === active) return
+    this.controlsActive = active
+    if (!active) {
+      this.clearAll()
+      this.updateStickVisual()
+      for (const btn of this.actionBtnByAction.values()) {
+        btn.classList.remove('mobile-action-btn--active')
+      }
+    }
+    this.rootEl?.classList.toggle('mobile-controls--hidden', !active)
+  }
+
   private readonly onStickPointerDown = (e: PointerEvent): void => {
-    if (!this.enabled || this.stickAreaEl == null || this.stickBaseEl == null) return
+    if (!this.controlsActive || this.stickAreaEl == null || this.stickBaseEl == null) return
     e.preventDefault()
     if (this.joystickPointerId !== null) return
     this.joystickPointerId = e.pointerId
@@ -152,20 +177,20 @@ export class MobileTouchInput {
   }
 
   private readonly onStickPointerMove = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     if (e.pointerId !== this.joystickPointerId) return
     e.preventDefault()
     this.updateStickFromClient(e.clientX, e.clientY)
   }
 
   private readonly onStickPointerLeave = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     if (e.pointerId !== this.joystickPointerId) return
     this.releaseJoystickPointer(e.pointerId)
   }
 
   private readonly onActionPointerDown = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     const btn = e.currentTarget as HTMLButtonElement
     const action = btn.dataset.action as InputAction | undefined
     if (!action) return
@@ -180,22 +205,22 @@ export class MobileTouchInput {
   }
 
   private readonly onActionPointerUp = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     this.releaseButtonPointer(e.pointerId)
   }
 
   private readonly onActionPointerCancel = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     this.releaseButtonPointer(e.pointerId)
   }
 
   private readonly onActionPointerLeave = (e: PointerEvent): void => {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     this.releaseButtonPointer(e.pointerId)
   }
 
   private handlePointerRelease(e: PointerEvent): void {
-    if (!this.enabled) return
+    if (!this.controlsActive) return
     if (e.pointerId === this.joystickPointerId) {
       this.releaseJoystickPointer(e.pointerId)
     }

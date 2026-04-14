@@ -67,6 +67,7 @@ const root = document.getElementById('app')
 if (!root) {
   throw new Error('#app missing')
 }
+const appRoot: HTMLElement = root
 
 initAttackTimingDebugFromUrl()
 initArcadeBotDebugFromUrl()
@@ -74,12 +75,69 @@ initArcadeBotDebugFromUrl()
 const {
   canvas,
   overlay,
+  mobileRotateOverlay,
+  mobileFullscreenBtn,
   matchHudMount,
   screenPunch,
   koMoment,
   pauseMenuRoot,
   matchEndRoot,
 } = mountAppShell(root)
+
+const isMobileLikeDevice = (() => {
+  if (typeof window === 'undefined') return false
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  )
+})()
+let mobilePortraitBlocked = false
+
+function isLandscapeViewport(): boolean {
+  if (window.screen?.orientation?.type) {
+    return String(window.screen.orientation.type).startsWith('landscape')
+  }
+  return window.innerWidth >= window.innerHeight
+}
+
+function syncMobileOrientationGate(): void {
+  if (!isMobileLikeDevice) {
+    mobilePortraitBlocked = false
+    mobileRotateOverlay.hidden = true
+    mobileRotateOverlay.setAttribute('aria-hidden', 'true')
+    return
+  }
+  const blocked = !isLandscapeViewport()
+  mobilePortraitBlocked = blocked
+  mobileRotateOverlay.hidden = !blocked
+  mobileRotateOverlay.setAttribute('aria-hidden', blocked ? 'false' : 'true')
+}
+
+async function enterMobileFullscreenAndLockLandscape(): Promise<void> {
+  if (!isMobileLikeDevice) return
+  try {
+    if (!document.fullscreenElement) {
+      await appRoot.requestFullscreen()
+    }
+  } catch (e) {
+    console.warn('[mobile] fullscreen request failed', e)
+  }
+  try {
+    const so: {
+      lock?: (orientation: 'landscape') => Promise<void>
+    } | null = (window.screen?.orientation as unknown as {
+      lock?: (orientation: 'landscape') => Promise<void>
+    } | null)
+    if (so && typeof so.lock === 'function') {
+      await so.lock('landscape')
+    }
+  } catch (e) {
+    console.warn('[mobile] orientation lock not available or denied', e)
+  } finally {
+    syncMobileOrientationGate()
+  }
+}
 
 const KO_ROUND_DRAMA_SEC = 2.35
 let koRoundHaltTimer = 0
@@ -259,7 +317,14 @@ const keyboard = createKeyboardInput({ preventBrowserDefaults: false })
 const mobileTouch = createMobileTouchInput()
 
 keyboard.attach()
-mobileTouch.attach(root)
+mobileTouch.attach(appRoot)
+syncMobileOrientationGate()
+window.addEventListener('resize', syncMobileOrientationGate, { passive: true })
+window.addEventListener('orientationchange', syncMobileOrientationGate)
+document.addEventListener('fullscreenchange', syncMobileOrientationGate)
+mobileFullscreenBtn.addEventListener('click', () => {
+  void enterMobileFullscreenAndLockLandscape()
+})
 
 function mergeSnapshots(a: FrameSnapshot, b: FrameSnapshot): FrameSnapshot {
   return {
@@ -924,10 +989,13 @@ const stage = startMinimalStage(canvas, {
       loggedOnlineControlBootstrap = false
     }
 
-    const localSnap = mergeSnapshots(keyboard.readFrame(), mobileTouch.readFrame())
+    const touchCombatActive = getGameUiState() === 'in_match' && !mobilePortraitBlocked
+    mobileTouch.setCombatActive(touchCombatActive)
+    const localSnapRaw = mergeSnapshots(keyboard.readFrame(), mobileTouch.readFrame())
+    const localSnap = mobilePortraitBlocked ? EMPTY_FRAME_SNAPSHOT : localSnapRaw
     const inMatch = flowMode === 'vs-bot-match' || flowMode === 'online-match'
     const preRoundControlsLocked =
-      inMatch && (vsBotPhase === 'countdown' || countdownHoldForAssets)
+      inMatch && (vsBotPhase === 'countdown' || countdownHoldForAssets || mobilePortraitBlocked)
     const controlSnap = preRoundControlsLocked ? EMPTY_FRAME_SNAPSHOT : localSnap
 
     if (preRoundControlsLocked && !prevPreRoundControlsLocked) {
@@ -946,7 +1014,11 @@ const stage = startMinimalStage(canvas, {
     }
 
     const simActive =
-      inMatch && vsBotPhase === 'fighting' && !matchPaused && koRoundHaltTimer <= 0
+      inMatch &&
+      vsBotPhase === 'fighting' &&
+      !matchPaused &&
+      koRoundHaltTimer <= 0 &&
+      !mobilePortraitBlocked
     const inOnlineFight = flowMode === 'online-match' && simActive
     const onlineConnected = Boolean(
       onlineLobbyMount?.session.isOpen() && onlineLobbyMount.session.hasPeer(),

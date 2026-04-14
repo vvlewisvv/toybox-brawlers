@@ -1,6 +1,8 @@
 export type AppShellMount = {
   canvas: HTMLCanvasElement
   overlay: HTMLElement
+  mobileRotateOverlay: HTMLElement
+  mobileFullscreenBtn: HTMLButtonElement
   /** Empty host; combat HUD is mounted here only during match-facing game states. */
   matchHudMount: HTMLElement
   /** Full-viewport vignette for hit / block feedback (no pointer capture). */
@@ -23,6 +25,15 @@ export function mountAppShell(root: HTMLElement): AppShellMount {
         aria-label="Stage preview"
       ></canvas>
       <div class="ui-overlay" id="ui-overlay"></div>
+      <div class="mobile-rotate-overlay" id="mobile-rotate-overlay" hidden aria-hidden="true">
+        <div class="mobile-rotate-overlay__card">
+          <h2 class="mobile-rotate-overlay__title">Rotate your phone</h2>
+          <p class="mobile-rotate-overlay__sub">Landscape mode is required for mobile gameplay.</p>
+          <button type="button" class="main-menu__btn main-menu__btn--primary" id="mobile-fullscreen-btn">
+            Fullscreen
+          </button>
+        </div>
+      </div>
       <div class="in-game-layer" id="pause-menu-root" hidden aria-hidden="true">
         <div class="in-game-modal" role="dialog" aria-modal="true" aria-labelledby="pause-menu-title">
           <h2 class="in-game-modal__title" id="pause-menu-title">Paused</h2>
@@ -94,6 +105,8 @@ export function mountAppShell(root: HTMLElement): AppShellMount {
   `
   const canvas = root.querySelector<HTMLCanvasElement>('#stage-canvas')
   const overlay = root.querySelector<HTMLElement>('#ui-overlay')
+  const mobileRotateOverlay = root.querySelector<HTMLElement>('#mobile-rotate-overlay')
+  const mobileFullscreenBtn = root.querySelector<HTMLButtonElement>('#mobile-fullscreen-btn')
   const matchHudMount = root.querySelector<HTMLElement>('#match-hud-mount')
   const screenPunch = root.querySelector<HTMLElement>('#screen-punch')
   const koMoment = root.querySelector<HTMLElement>('#ko-moment')
@@ -102,13 +115,25 @@ export function mountAppShell(root: HTMLElement): AppShellMount {
   if (
     !canvas ||
     !overlay ||
+    !mobileRotateOverlay ||
+    !mobileFullscreenBtn ||
     !matchHudMount ||
     !screenPunch ||
     !koMoment ||
     !pauseMenuRoot ||
     !matchEndRoot
   ) {
-    throw new Error('stage canvas, ui overlay, match HUD mount, modals, KO moment, or screen punch missing')
+    throw new Error('stage shell missing required nodes')
   }
-  return { canvas, overlay, matchHudMount, screenPunch, koMoment, pauseMenuRoot, matchEndRoot }
+  return {
+    canvas,
+    overlay,
+    mobileRotateOverlay,
+    mobileFullscreenBtn,
+    matchHudMount,
+    screenPunch,
+    koMoment,
+    pauseMenuRoot,
+    matchEndRoot,
+  }
 }
