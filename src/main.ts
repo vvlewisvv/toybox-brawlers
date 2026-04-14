@@ -30,6 +30,7 @@ import {
 } from './gameplay/combat/attackTimingDebug'
 import {
   createKeyboardInput,
+  createMobileTouchInput,
   EMPTY_FRAME_SNAPSHOT,
   readMoveAxis,
   type FrameSnapshot,
@@ -255,8 +256,18 @@ let prevPreRoundControlsLocked = false
 setActiveFightersForAssetPipeline(() => [playerFighter, botFighter])
 
 const keyboard = createKeyboardInput({ preventBrowserDefaults: false })
+const mobileTouch = createMobileTouchInput()
 
 keyboard.attach()
+mobileTouch.attach(root)
+
+function mergeSnapshots(a: FrameSnapshot, b: FrameSnapshot): FrameSnapshot {
+  return {
+    held: new Set([...a.held, ...b.held]),
+    pressed: new Set([...a.pressed, ...b.pressed]),
+    released: new Set([...a.released, ...b.released]),
+  }
+}
 
 /** Factories for background GPU warmup on character select (meshes disposed after compile). */
 const rosterWarmupFactories = ROSTER_TEST_ENTRIES.map(
@@ -913,7 +924,7 @@ const stage = startMinimalStage(canvas, {
       loggedOnlineControlBootstrap = false
     }
 
-    const localSnap = keyboard.readFrame()
+    const localSnap = mergeSnapshots(keyboard.readFrame(), mobileTouch.readFrame())
     const inMatch = flowMode === 'vs-bot-match' || flowMode === 'online-match'
     const preRoundControlsLocked =
       inMatch && (vsBotPhase === 'countdown' || countdownHoldForAssets)

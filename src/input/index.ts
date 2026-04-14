@@ -11,3 +11,4 @@ export {
   type FrameSnapshot,
   type KeyboardInputOptions,
 } from './keyboardInput'
+export { MobileTouchInput, createMobileTouchInput } from './mobileTouchInput'
