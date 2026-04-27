@@ -43,7 +43,7 @@ export function resolvePushboxPair(
     const aTowardB = intentA * dir > 1e-3
     const bTowardA = intentB * dir < -1e-3
 
-    // Prevent passive shove: if only one side is pressing inward, that side gets displaced.
+    // Never transfer body force: only the fighter walking inward gets corrected.
     if (aTowardB && !bTowardA) {
       a.shiftPlanarX(-dir * overlap)
       continue
@@ -53,8 +53,8 @@ export function resolvePushboxPair(
       continue
     }
 
-    // Mutual pressure (or no clear pressure): separate symmetrically.
-    a.shiftPlanarX(-dir * overlap * 0.5)
-    b.shiftPlanarX(dir * overlap * 0.5)
+    // Mutual/neutral contact: no displacement transfer between fighters.
+    // This hard rule prevents body push in PvP and bot modes.
+    return
   }
 }

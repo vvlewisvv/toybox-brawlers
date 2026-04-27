@@ -37,7 +37,7 @@ function rescanActiveGlbFighters(): void {
 }
 
 /**
- * Stage 1 — app boot: roster rig + idle preview only (no combat / KO / win split GLBs).
+ * Stage 1 — app boot: roster rig + idle preview only (no combat / KO split GLBs).
  */
 export async function loadBootAssets(): Promise<void> {
   console.info('[assets] boot stage start')
@@ -58,14 +58,14 @@ export async function loadCharacterSelectAssets(mode: CharacterSelectAssetMode):
 }
 
 /**
- * Stage 3 — round about to start: KO + win clips for the two fighters in this match only.
+ * Stage 3 — round about to start: KO clips for the two fighters in this match only.
  */
 export async function loadRoundStartAssets(fighterIds: readonly string[]): Promise<void> {
   const unique = [...new Set(fighterIds)].filter(isRosterGlbFighterId)
-  console.info('[assets] round start stage start (KO / win only)', { fighterIds: unique })
+  console.info('[assets] round start stage start (KO only)', { fighterIds: unique })
   await Promise.all(unique.map((id) => preloadRosterGlbRoundEnd(id)))
   rescanActiveGlbFighters()
-  console.info('[assets] round start stage done (KO / win only)', { fighterIds: unique })
+  console.info('[assets] round start stage done (KO only)', { fighterIds: unique })
 }
 
 /**

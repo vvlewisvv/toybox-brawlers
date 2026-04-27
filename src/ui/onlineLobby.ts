@@ -87,7 +87,7 @@ export function mountOnlineLobby(
     if (searchingAnimTimer !== null) {
       clearInterval(searchingAnimTimer)
       searchingAnimTimer = null
-      console.info('[Plushdown:OnlineDebug] lobby · searching animation stopped')
+      console.info('[Toybox Brawlers:OnlineDebug] lobby · searching animation stopped')
     }
     searchingDotsPhase = 0
   }
@@ -103,7 +103,7 @@ export function mountOnlineLobby(
     stopSearchingAnimation()
     tickSearchingDots()
     searchingAnimTimer = setInterval(tickSearchingDots, SEARCHING_DOT_MS)
-    console.info('[Plushdown:OnlineDebug] lobby · searching animation started')
+    console.info('[Toybox Brawlers:OnlineDebug] lobby · searching animation started')
   }
 
   const onlineSession = new OnlineSession(wsUrl, {
@@ -118,14 +118,14 @@ export function mountOnlineLobby(
     },
     onPeerJoined() {
       setStatus('Opponent connected. Choose fighters.')
-      console.info('[Plushdown:OnlineDebug] lobby · room connected (peer_joined)')
+      console.info('[Toybox Brawlers:OnlineDebug] lobby · room connected (peer_joined)')
       onEnterCharacterSelect()
     },
     onPeerLeft() {
       if (isInOnlineMatch()) {
         onPeerLeftInMatch()
       } else if (isInOnlineCharacterSelect()) {
-        console.info('[Plushdown:OnlineDebug] lobby · peer left during character select')
+        console.info('[Toybox Brawlers:OnlineDebug] lobby · peer left during character select')
         onPeerLeftDuringCharacterSelect()
       } else {
         setStatus('Opponent left.')
@@ -144,7 +144,7 @@ export function mountOnlineLobby(
     onMatchStartFromHost,
     onQueueWaiting() {
       setStatus('Looking for an opponent… (another player must choose Quick match too.)')
-      console.info('[Plushdown:OnlineDebug] lobby · matchmaking started')
+      console.info('[Toybox Brawlers:OnlineDebug] lobby · matchmaking started')
     },
     onQueueLeft() {
       hideSearchingOverlay()
@@ -159,7 +159,7 @@ export function mountOnlineLobby(
         wrapCode && (wrapCode.hidden = true)
       }
       setStatus('Match found. Choose fighters.')
-      console.info('[Plushdown:OnlineDebug] lobby · match found', {
+      console.info('[Toybox Brawlers:OnlineDebug] lobby · match found', {
         roomCode: msg.roomCode,
         role: msg.role,
       })
@@ -206,7 +206,7 @@ export function mountOnlineLobby(
 
   const onCreate = () => {
     resetLobbyUi()
-    console.info('[Plushdown:OnlineDebug] lobby · create room')
+    console.info('[Toybox Brawlers:OnlineDebug] lobby · create room')
     onlineSession.createRoom()
   }
 
@@ -219,14 +219,14 @@ export function mountOnlineLobby(
   const onSearchingCancel = () => {
     if (btnSearchingCancel?.disabled) return
     if (btnSearchingCancel) btnSearchingCancel.disabled = true
-    console.info('[Plushdown:OnlineDebug] lobby · cancel queue (queue_leave)')
+    console.info('[Toybox Brawlers:OnlineDebug] lobby · cancel queue (queue_leave)')
     onlineSession.leaveQueue()
     resetLobbyUi()
   }
 
   const onJoin = () => {
     resetLobbyUi()
-    console.info('[Plushdown:OnlineDebug] lobby · join room')
+    console.info('[Toybox Brawlers:OnlineDebug] lobby · join room')
     onlineSession.joinRoom(inpJoin.value)
   }
 
@@ -259,7 +259,7 @@ export function mountOnlineLobby(
     hideSearchingOverlay,
     resetLobbyVisuals: resetLobbyUi,
     dispose() {
-      console.info('[Plushdown:OnlineDebug] scene · online lobby dispose (remove listeners + disconnect)')
+      console.info('[Toybox Brawlers:OnlineDebug] scene · online lobby dispose (remove listeners + disconnect)')
       stopSearchingAnimation()
       setLobbySearchingUi(false)
       btnQueue.removeEventListener('click', onQueueClick)

@@ -80,23 +80,6 @@ export function mountAppShell(root: HTMLElement): AppShellMount {
         <span class="ko-moment__text">K.O.</span>
       </div>
       <div id="match-hud-mount" class="match-hud-mount" aria-hidden="true"></div>
-      <aside
-        class="roster-test-panel"
-        id="roster-test-panel"
-        aria-label="Temporary roster test (vs bot)"
-      >
-        <div class="roster-test-panel__head">Roster test</div>
-        <div class="roster-test-panel__row">
-          <label class="roster-test-panel__label"
-            >P1
-            <select id="roster-test-p1" class="roster-test-panel__select"></select>
-          </label>
-          <label class="roster-test-panel__label"
-            >P2
-            <select id="roster-test-p2" class="roster-test-panel__select"></select>
-          </label>
-        </div>
-      </aside>
     </div>
   `
   const canvas = root.querySelector<HTMLCanvasElement>('#stage-canvas')

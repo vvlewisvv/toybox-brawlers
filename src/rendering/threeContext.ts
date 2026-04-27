@@ -16,9 +16,14 @@ export type ThreeContext = {
 }
 
 const defaultRendererOpts: WebGLRendererParameters = {
-  antialias: true,
+  antialias: false,
   alpha: false,
   powerPreference: 'high-performance',
+}
+
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia('(pointer: coarse)').matches
 }
 
 /** Creates WebGLRenderer + scene + camera. Used by stage scenes. */
@@ -33,7 +38,8 @@ export function createThreeContext(
   camera.position.set(0, 2.2, 6)
 
   const renderer = new WebGLRenderer({ canvas, ...rendererOpts })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  const mobile = isMobileDevice()
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.75))
   renderer.outputColorSpace = SRGBColorSpace
   renderer.toneMapping = ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.09

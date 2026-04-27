@@ -407,7 +407,7 @@ export class OnlineSession {
     this.lastFighterSelectedSent = ''
     this.lastFighterSelectedAt = 0
     this.clearCharacterSelectReadyIds('prepareForNewOnlineMatch')
-    console.info('[Plushdown:OnlineDebug] session.prepareForNewOnlineMatch · reset')
+    console.info('[Toybox Brawlers:OnlineDebug] session.prepareForNewOnlineMatch · reset')
   }
 
   resetLockstep(): void {
@@ -495,7 +495,7 @@ export class OnlineSession {
 
   private teardownConnection(): void {
     if (this.ws) {
-      console.info('[Plushdown:OnlineDebug] websocket · teardown / close')
+      console.info('[Toybox Brawlers:OnlineDebug] websocket · teardown / close')
       this.ws.close()
       this.ws = null
     }
@@ -508,7 +508,7 @@ export class OnlineSession {
     ws.addEventListener(
       'open',
       () => {
-        console.info('[Plushdown:OnlineDebug] websocket · open', { dbgId, url: this.url })
+        console.info('[Toybox Brawlers:OnlineDebug] websocket · open', { dbgId, url: this.url })
         onOpen()
       },
       { once: true },
@@ -578,7 +578,7 @@ export class OnlineSession {
       case 'fighter_selected': {
         const id = typeof msg.charId === 'string' ? msg.charId : ''
         if (id) {
-          console.info('[Plushdown:OnlineDebug] wire · fighter_selected (peer)', { charId: id })
+          console.info('[Toybox Brawlers:OnlineDebug] wire · fighter_selected (peer)', { charId: id })
           this.cb.onPeerFighterSelected(id)
         }
         break
@@ -668,7 +668,7 @@ export class OnlineSession {
         break
       }
       case 'rematch_request':
-        console.info('[Plushdown:OnlineDebug] rematch · rematch_request (peer)')
+        console.info('[Toybox Brawlers:OnlineDebug] rematch · rematch_request (peer)')
         this.cb.onPeerRematchRequested?.()
         break
       case 'rematch_accept':
@@ -718,7 +718,7 @@ export class OnlineSession {
 
   private send(obj: ClientWireMessage): void {
     if (obj.type === 'queue_join' || obj.type === 'queue_leave') {
-      console.info('[Plushdown:OnlineDebug] queue ·', obj.type)
+      console.info('[Toybox Brawlers:OnlineDebug] queue ·', obj.type)
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj))

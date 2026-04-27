@@ -16,7 +16,6 @@ import {
   DEFAULT_ROSTER_TEST_P2_ID,
   getRosterTestDefinition,
   isCombatTestBotActive,
-  resolvePushboxPair,
   resolveStrike,
   rosterEntriesToSelectPresenters,
   ROSTER_TEST_ENTRIES,
@@ -68,8 +67,12 @@ if (!root) {
   throw new Error('#app missing')
 }
 
-initAttackTimingDebugFromUrl()
-initArcadeBotDebugFromUrl()
+const DEV_MODE = import.meta.env.DEV
+
+if (DEV_MODE) {
+  initAttackTimingDebugFromUrl()
+  initArcadeBotDebugFromUrl()
+}
 
 const {
   canvas,
@@ -81,6 +84,20 @@ const {
   pauseMenuRoot,
   matchEndRoot,
 } = mountAppShell(root)
+
+const controlsHintEl = document.createElement('div')
+controlsHintEl.className = 'controls-hint'
+controlsHintEl.setAttribute('aria-hidden', 'true')
+controlsHintEl.textContent = [
+  'CONTROLS',
+  'Move: WASD / Stick',
+  'Jump: Space / Up',
+  'Block: A',
+  'Special: S',
+  'Medium: D',
+  'Light: F',
+].join('\n')
+overlay.appendChild(controlsHintEl)
 
 let rotateOverlayBlockingGameplay = false
 
@@ -158,9 +175,9 @@ let onlineMatchSyncCoalesceModeLogged = false
 
 function logOnlineDebug(tag: string, message: string, detail?: Record<string, unknown>): void {
   if (detail) {
-    console.info(`[Plushdown:OnlineDebug] ${tag} · ${message}`, detail)
+    console.info(`[Toybox Brawlers:OnlineDebug] ${tag} · ${message}`, detail)
   } else {
-    console.info(`[Plushdown:OnlineDebug] ${tag} · ${message}`)
+    console.info(`[Toybox Brawlers:OnlineDebug] ${tag} · ${message}`)
   }
 }
 
@@ -178,6 +195,11 @@ const P1_START_X = -2.2
 const P2_START_X = 2.2
 
 type VsBotPhase = SyncedMatchPhase
+type WinnerSide = 'p1' | 'p2'
+
+type FightResult =
+  | { type: 'draw'; winner: null; loser: null; text: 'DRAW' }
+  | { type: 'win'; winner: WinnerSide; loser: WinnerSide; text: string }
 
 /** Drives overlay visibility (vs internal `VsBotPhase` + `AppFlowMode`). */
 type GameUiState =
@@ -213,6 +235,9 @@ let loggedOnlineMovementEnabled = false
 let sfxPrevVsPhase: VsBotPhase = 'fighting'
 let sfxLastCdInt = -1
 let sfxFootAcc = 0
+let controlsHintShownInMatch = false
+let controlsHintDismissAtMs = 0
+let controlsHintRoundCount = 0
 
 const SYNC_PHASES: ReadonlySet<SyncedMatchPhase> = new Set([
   'fighting',
@@ -287,6 +312,39 @@ function mergeSnapshots(a: FrameSnapshot, b: FrameSnapshot): FrameSnapshot {
   }
 }
 
+/**
+ * Body-contact guardrail: movement input may not drive fighters through each other.
+ * We block only the mover's forward intent and never push/separate either fighter.
+ */
+const PUSHLESS_BODY_BLOCK_BUFFER = 0.02
+
+function canMoveTowardOpponent(
+  fighter: PlaceholderFighter,
+  opponent: PlaceholderFighter,
+  inputDirection: -1 | 0 | 1,
+): boolean {
+  if (inputDirection === 0) return true
+  const fx = fighter.getPlanarX()
+  const ox = opponent.getPlanarX()
+  const distance = Math.abs(fx - ox)
+  const minDistance = fighter.getPushHalfX() + opponent.getPushHalfX() + PUSHLESS_BODY_BLOCK_BUFFER
+  const movingToward = (fx < ox && inputDirection > 0) || (fx > ox && inputDirection < 0)
+  if (!movingToward) return true
+  return distance > minDistance
+}
+
+function blockTowardMovement(snapshot: FrameSnapshot): FrameSnapshot {
+  if (!snapshot.held.has('left') && !snapshot.held.has('right')) return snapshot
+  const held = new Set(snapshot.held)
+  held.delete('left')
+  held.delete('right')
+  return {
+    held,
+    pressed: snapshot.pressed,
+    released: snapshot.released,
+  }
+}
+
 /** Factories for background GPU warmup on character select (meshes disposed after compile). */
 const rosterWarmupFactories = ROSTER_TEST_ENTRIES.map(
   (e) => () => e.definition.createMesh(),
@@ -307,14 +365,14 @@ function getGameUiState(): GameUiState {
 function logGameUiState(): void {
   const s = getGameUiState()
   if (s !== lastLoggedGameUiState) {
-    console.info('[Plushdown:State]', lastLoggedGameUiState ?? '(init)', '→', s)
+    console.info('[Toybox Brawlers:State]', lastLoggedGameUiState ?? '(init)', '→', s)
     const hudPhaseActive = MATCH_HUD_VISIBLE_STATES.has(s)
     console.info(
-      '[Plushdown:HUD]',
+      '[Toybox Brawlers:HUD]',
       `phase=${hudPhaseActive ? 'active' : 'inactive'} mounted=${!!matchHudCtrl} state=${s}`,
     )
     if (s === 'main_menu') {
-      console.info('[Plushdown:UI] main_menu · active layers', {
+      console.info('[Toybox Brawlers:UI] main_menu · active layers', {
         canvas: true,
         uiOverlay: true,
         combatHudMounted: !!matchHudCtrl,
@@ -334,12 +392,12 @@ function syncMatchHudLifecycle(): void {
     const { controller, unmount } = mountCombatMatchHud(matchHudMount)
     matchHudCtrl = controller
     unmountMatchHud = unmount
-    console.info('[Plushdown:HUD] mounted', { state: getGameUiState() })
+    console.info('[Toybox Brawlers:HUD] mounted', { state: getGameUiState() })
   } else if (!want && matchHudCtrl) {
     unmountMatchHud?.()
     unmountMatchHud = undefined
     matchHudCtrl = undefined
-    console.info('[Plushdown:HUD] unmounted', { state: getGameUiState() })
+    console.info('[Toybox Brawlers:HUD] unmounted', { state: getGameUiState() })
   }
 }
 
@@ -401,9 +459,81 @@ function syncGameUiOverlays(): void {
     })
 }
 
+function updateControlsHintVisibility(nowMs: number): void {
+  const inMatchFlow = flowMode === 'vs-bot-match' || flowMode === 'online-match'
+  if (!inMatchFlow) {
+    controlsHintEl.classList.remove('controls-hint--visible')
+    controlsHintShownInMatch = false
+    controlsHintDismissAtMs = 0
+    return
+  }
+  const inPlayableRound = vsBotPhase === 'countdown' || vsBotPhase === 'fighting'
+  if (!inPlayableRound) {
+    controlsHintEl.classList.remove('controls-hint--visible')
+    return
+  }
+  if (!controlsHintShownInMatch) {
+    controlsHintShownInMatch = true
+    controlsHintDismissAtMs = nowMs + 14_000
+    controlsHintEl.classList.add('controls-hint--visible')
+    return
+  }
+  if (controlsHintDismissAtMs > 0 && nowMs >= controlsHintDismissAtMs) {
+    controlsHintEl.classList.remove('controls-hint--visible')
+  }
+}
+
 function roundLabelText(): string {
   if (vsBotPhase === 'match_done') return 'Match over'
   return `Round ${p1Wins + p2Wins + 1}`
+}
+
+function getFightResult(
+  mode: 'solo' | 'online',
+  p1Health: number,
+  p2Health: number,
+  onlineRole: 'host' | 'guest' | null,
+): FightResult | null {
+  const p1Dead = p1Health <= 0
+  const p2Dead = p2Health <= 0
+  if (p1Dead && p2Dead) return { type: 'draw', winner: null, loser: null, text: 'DRAW' }
+  if (!p1Dead && !p2Dead) return null
+
+  const winner: WinnerSide = p2Dead ? 'p1' : 'p2'
+  const loser: WinnerSide = winner === 'p1' ? 'p2' : 'p1'
+  if (mode === 'solo') {
+    return { type: 'win', winner, loser, text: winner === 'p1' ? 'YOU WIN' : 'YOU LOSE' }
+  }
+
+  const localSide: WinnerSide | null =
+    onlineRole === 'host' ? 'p1' : onlineRole === 'guest' ? 'p2' : null
+  const text =
+    localSide == null
+      ? winner === 'p1'
+        ? 'PLAYER 1 WINS'
+        : 'PLAYER 2 WINS'
+      : winner === localSide
+        ? 'YOU WIN'
+        : 'YOU LOSE'
+  return { type: 'win', winner, loser, text }
+}
+
+function logFightResultDebug(
+  mode: 'solo' | 'online',
+  p1Health: number,
+  p2Health: number,
+  result: FightResult | null,
+): void {
+  if (!DEV_MODE) return
+  console.log('Fight result:', {
+    mode,
+    fighterA: rosterTestP1Id,
+    fighterAHealth: p1Health,
+    fighterB: rosterTestP2Id,
+    fighterBHealth: p2Health,
+    winner: result?.type === 'win' ? result.winner : null,
+    text: result?.text ?? null,
+  })
 }
 
 /** Stops delayed `endVsBotRound` from firing after the player restarts (Play again / rematch). */
@@ -480,7 +610,7 @@ function applyOnlineMatchSync(p: MatchSyncPayload): void {
     p.rz === 1
   ) {
     console.info('[COUNTDOWN_START] guest via match_sync', { cd: p.cd, rz: p.rz })
-    console.info('[Plushdown:OnlineDebug] match · countdown start received (match_sync guest, rz)', {
+    console.info('[Toybox Brawlers:OnlineDebug] match · countdown start received (match_sync guest, rz)', {
       cd: p.cd,
     })
   }
@@ -542,6 +672,11 @@ async function enterRoundCountdown(): Promise<void> {
     preRoundSeconds: PRE_ROUND_COUNTDOWN_SEC,
   })
   console.info('[rematch] entering countdown · reset fighters + match_sync')
+  controlsHintRoundCount += 1
+  if (controlsHintRoundCount <= 1) {
+    controlsHintShownInMatch = false
+    controlsHintDismissAtMs = 0
+  }
   loggedOnlineMovementEnabled = false
   matchPaused = false
   roundTimeLeft = ROUND_DURATION_SEC
@@ -553,7 +688,7 @@ async function enterRoundCountdown(): Promise<void> {
   pushOnlineMatchSyncFromHost({ fightersReset: true })
   if (flowMode === 'online-match') {
     const role = onlineLobbyMount?.session.getRole() ?? null
-    console.info('[Plushdown:OnlineDebug] match · countdown started (host push match_sync)', {
+    console.info('[Toybox Brawlers:OnlineDebug] match · countdown started (host push match_sync)', {
       role,
     })
   }
@@ -742,7 +877,6 @@ function beginOnlineMatchFromCharacterSelect(hostCharId: string, guestCharId: st
   onlineLobbyMount?.hideSearchingOverlay()
   rosterTestP1Id = hostCharId
   rosterTestP2Id = guestCharId
-  syncRosterTestDropdowns()
   recreateFightersFromRosterIds()
   resetFightersForRound()
   setFightersVisible(false)
@@ -766,6 +900,9 @@ function beginFreshMatch(): void {
   cancelPendingKoRoundResolution()
   roundCountdownEnterInFlight = false
   countdownHoldForAssets = false
+  controlsHintRoundCount = 0
+  controlsHintShownInMatch = false
+  controlsHintDismissAtMs = 0
 
   if (flowMode === 'online-match') {
     console.info('[GAME_INIT] beginFreshMatch online · prepareForNewOnlineMatch + lockstep + countdown')
@@ -776,7 +913,7 @@ function beginFreshMatch(): void {
     p2Wins = 0
     onlineLobbyMount?.session.resetLockstep()
     hitFeel?.resetFightCameraPose()
-    void enterRoundCountdown().catch((e) => console.error('[Plushdown] enterRoundCountdown', e))
+    void enterRoundCountdown().catch((e) => console.error('[Toybox Brawlers] enterRoundCountdown', e))
     return
   }
   matchPaused = false
@@ -784,7 +921,7 @@ function beginFreshMatch(): void {
   p2Wins = 0
   onlineLobbyMount?.session.resetLockstep()
   hitFeel?.resetFightCameraPose()
-  void enterRoundCountdown().catch((e) => console.error('[Plushdown] enterRoundCountdown', e))
+  void enterRoundCountdown().catch((e) => console.error('[Toybox Brawlers] enterRoundCountdown', e))
 }
 
 /** Dispose and spawn fighters from current `rosterTestP1Id` / `rosterTestP2Id` (no match / round reset). */
@@ -804,7 +941,7 @@ function recreateFightersFromRosterIds(): void {
       startX: P1_START_X,
     })
   } catch (err) {
-    console.error('[Plushdown] Player fighter failed to initialize:', err)
+    console.error('[Toybox Brawlers] Player fighter failed to initialize:', err)
   }
 
   try {
@@ -813,7 +950,7 @@ function recreateFightersFromRosterIds(): void {
       startX: P2_START_X,
     })
   } catch (err) {
-    console.error('[Plushdown] Bot fighter failed to initialize:', err)
+    console.error('[Toybox Brawlers] Bot fighter failed to initialize:', err)
   }
   logOnlineDebug('spawn', 'fighter spawn completed', {
     p1: rosterTestP1Id,
@@ -834,62 +971,24 @@ function applyRosterTestSelection(): void {
   }
 }
 
-function syncRosterTestDropdowns(): void {
-  if (!root) return
-  const p1Sel = root.querySelector<HTMLSelectElement>('#roster-test-p1')
-  const p2Sel = root.querySelector<HTMLSelectElement>('#roster-test-p2')
-  if (p1Sel && ROSTER_TEST_ENTRIES.some((e) => e.id === rosterTestP1Id)) {
-    p1Sel.value = rosterTestP1Id
-  }
-  if (p2Sel && ROSTER_TEST_ENTRIES.some((e) => e.id === rosterTestP2Id)) {
-    p2Sel.value = rosterTestP2Id
-  }
-}
 
-function mountRosterTestPanel(host: HTMLElement): void {
-  const p1Sel = host.querySelector<HTMLSelectElement>('#roster-test-p1')
-  const p2Sel = host.querySelector<HTMLSelectElement>('#roster-test-p2')
-  if (!p1Sel || !p2Sel) return
-
-  for (const entry of ROSTER_TEST_ENTRIES) {
-    const a = document.createElement('option')
-    a.value = entry.id
-    a.textContent = entry.label
-    p1Sel.appendChild(a)
-    const b = document.createElement('option')
-    b.value = entry.id
-    b.textContent = entry.label
-    p2Sel.appendChild(b)
-  }
-
-  p1Sel.value = rosterTestP1Id
-  p2Sel.value = rosterTestP2Id
-
-  p1Sel.addEventListener('change', () => {
-    rosterTestP1Id = p1Sel.value
-    vsBotCharSelectApi?.syncSelection(rosterTestP1Id, rosterTestP2Id)
-    applyRosterTestSelection()
-  })
-  p2Sel.addEventListener('change', () => {
-    rosterTestP2Id = p2Sel.value
-    vsBotCharSelectApi?.syncSelection(rosterTestP1Id, rosterTestP2Id)
-    applyRosterTestSelection()
-  })
-}
 
 function endVsBotRound(result: 'p1' | 'p2' | 'draw'): void {
   if (flowMode === 'online-match' && onlineLobbyMount?.session.getRole() === 'guest') {
     return
   }
-  const rivalTitle = flowMode === 'online-match' ? 'Opponent' : 'Bot'
-  const rivalLower = flowMode === 'online-match' ? 'opponent' : 'bot'
+  const mode: 'solo' | 'online' = flowMode === 'online-match' ? 'online' : 'solo'
+  const onlineRole = flowMode === 'online-match' ? (onlineLobbyMount?.session.getRole() ?? null) : null
   matchPaused = false
+  const p1Health = playerFighter?.getHealth().current ?? 0
+  const p2Health = botFighter?.getHealth().current ?? 0
+  const healthResult = getFightResult(mode, p1Health, p2Health, onlineRole)
+  logFightResultDebug(mode, p1Health, p2Health, healthResult)
+
   if (result === 'draw') {
     vsBotPhase = 'round_break'
     roundBreakTimer = ROUND_BREAK_SEC
-    const bothDown =
-      (playerFighter?.getHealth().current ?? 1) <= 0 &&
-      (botFighter?.getHealth().current ?? 1) <= 0
+    const bothDown = p1Health <= 0 && p2Health <= 0
     roundBanner = bothDown ? 'Double K.O. — replay round' : 'Draw — replay round'
     pushOnlineMatchSyncFromHost()
     return
@@ -898,32 +997,38 @@ function endVsBotRound(result: 'p1' | 'p2' | 'draw'): void {
   if (result === 'p1') p1Wins += 1
   else p2Wins += 1
 
-  if (result === 'p1') playerFighter?.beginRoundWinPresentation()
-  else botFighter?.beginRoundWinPresentation()
+  // Disabled round-win animation to keep end-of-round flow snappy and trim animation work.
 
   const h1 = playerFighter?.getHealth().current ?? 0
   const h2 = botFighter?.getHealth().current ?? 0
   const ko = result === 'p1' ? h2 <= 0 : h1 <= 0
 
+  const winnerText =
+    healthResult && healthResult.type === 'win'
+      ? healthResult.text
+      : result === 'p1'
+        ? mode === 'solo'
+          ? 'YOU WIN'
+          : onlineRole === 'host'
+            ? 'YOU WIN'
+            : 'YOU LOSE'
+        : mode === 'solo'
+          ? 'YOU LOSE'
+          : onlineRole === 'guest'
+            ? 'YOU WIN'
+            : 'YOU LOSE'
+
   if (p1Wins >= WINS_TO_MATCH || p2Wins >= WINS_TO_MATCH) {
     vsBotPhase = 'match_done'
     roundBreakTimer = 0
-    roundBanner =
-      result === 'p1' ? 'You win the match' : `${rivalTitle} wins the match`
+    roundBanner = winnerText
     pushOnlineMatchSyncFromHost()
     return
   }
 
   vsBotPhase = 'round_break'
   roundBreakTimer = ROUND_BREAK_SEC
-  roundBanner =
-    result === 'p1'
-      ? ko
-        ? 'K.O. — you take the round'
-        : 'Time — you take the round'
-      : ko
-        ? `K.O. — ${rivalLower} takes the round`
-        : `Time — ${rivalLower} takes the round`
+  roundBanner = ko ? `K.O. — ${winnerText}` : `Time — ${winnerText}`
   pushOnlineMatchSyncFromHost()
 }
 
@@ -936,6 +1041,7 @@ let hitFeel: HitFeelController | undefined
 
 const stage = startMinimalStage(canvas, {
   beforeRender(dt) {
+    updateControlsHintVisibility(performance.now())
     syncMatchHudLifecycle()
 
     if (flowMode !== 'online-match') {
@@ -1029,6 +1135,18 @@ const stage = startMinimalStage(canvas, {
       stepDt = simDt
       snapSim = controlSnap
       botSnapSim = botSnapVsCpu
+    }
+
+    if (inMatch && playerFighter && botFighter) {
+      const p1Axis = readMoveAxis(snapSim)
+      if (p1Axis !== 0 && !canMoveTowardOpponent(playerFighter, botFighter, p1Axis)) {
+        snapSim = blockTowardMovement(snapSim)
+      }
+
+      const p2Axis = readMoveAxis(botSnapSim)
+      if (p2Axis !== 0 && !canMoveTowardOpponent(botFighter, playerFighter, p2Axis)) {
+        botSnapSim = blockTowardMovement(botSnapSim)
+      }
     }
 
     if (flowMode === 'online-match') {
@@ -1148,10 +1266,6 @@ const stage = startMinimalStage(canvas, {
           sfxFootAcc = 0
         }
 
-        resolvePushboxPair(playerFighter, botFighter, 4, {
-          aMoveIntentX: readMoveAxis(snapSim),
-          bMoveIntentX: readMoveAxis(botSnapSim),
-        })
         const vP = computeFighterCollisionVolumes(playerFighter, botFighter)
         const vB = computeFighterCollisionVolumes(botFighter, playerFighter)
         const rP = resolveStrike(playerFighter, botFighter, snapSim, botSnapSim, vP, vB)
@@ -1165,12 +1279,12 @@ const stage = startMinimalStage(canvas, {
           if (!rP.blocked && botFighter.getHealth().current <= 0) {
             const fall = -Math.sign(rP.strikeDir.x)
             botFighter.beginKnockoutPresentation(fall === 0 ? 1 : fall)
-            hitFeel?.triggerKoMoment()
+            hitFeel?.triggerKoMoment(rP.impact, rP.strikeDir)
             showKoMomentOverlay()
             koOverlayHideAt = performance.now() + (flowMode === 'online-match' ? 1550 : 2600)
             if (flowMode !== 'online-match') {
               koRoundHaltTimer = KO_ROUND_DRAMA_SEC
-              koPendingRoundResult = 'p2'
+              koPendingRoundResult = 'p1'
             }
           }
         }
@@ -1185,12 +1299,12 @@ const stage = startMinimalStage(canvas, {
           if (!rB.blocked && playerFighter.getHealth().current <= 0) {
             const fall = -Math.sign(rB.strikeDir.x)
             playerFighter.beginKnockoutPresentation(fall === 0 ? 1 : fall)
-            hitFeel?.triggerKoMoment()
+            hitFeel?.triggerKoMoment(rB.impact, rB.strikeDir)
             showKoMomentOverlay()
             koOverlayHideAt = performance.now() + (flowMode === 'online-match' ? 1550 : 2600)
             if (flowMode !== 'online-match') {
               koRoundHaltTimer = KO_ROUND_DRAMA_SEC
-              koPendingRoundResult = 'p1'
+              koPendingRoundResult = 'p2'
             }
           }
         }
@@ -1215,13 +1329,14 @@ const stage = startMinimalStage(canvas, {
           flowMode === 'online-match' &&
           onlineLobbyMount?.session.getRole() === 'guest'
         if (!onlineGuestResolve) {
-          if (h1 <= 0 && h2 <= 0) endVsBotRound('draw')
-          else if (h1 <= 0) {
-            if (koRoundHaltTimer <= 0) endVsBotRound('p2')
-          } else if (h2 <= 0) {
-            if (koRoundHaltTimer <= 0) endVsBotRound('p1')
-          }
-          else if (roundTimeLeft <= 0) {
+          const mode: 'solo' | 'online' = flowMode === 'online-match' ? 'online' : 'solo'
+          const onlineRole =
+            flowMode === 'online-match' ? (onlineLobbyMount?.session.getRole() ?? null) : null
+          const koResult = getFightResult(mode, h1, h2, onlineRole)
+          if (koResult?.type === 'draw') endVsBotRound('draw')
+          else if (koResult?.type === 'win') {
+            if (koRoundHaltTimer <= 0) endVsBotRound(koResult.winner)
+          } else if (roundTimeLeft <= 0) {
             if (h1 > h2) endVsBotRound('p1')
             else if (h2 > h1) endVsBotRound('p2')
             else endVsBotRound('draw')
@@ -1244,7 +1359,7 @@ const stage = startMinimalStage(canvas, {
             if (!roundCountdownEnterInFlight) {
               roundCountdownEnterInFlight = true
               void enterRoundCountdown()
-                .catch((e) => console.error('[Plushdown] enterRoundCountdown', e))
+                .catch((e) => console.error('[Toybox Brawlers] enterRoundCountdown', e))
                 .finally(() => {
                   roundCountdownEnterInFlight = false
                 })
@@ -1264,7 +1379,7 @@ const stage = startMinimalStage(canvas, {
                 role: onlineLobbyMount?.session.getRole() ?? null,
                 vsBotPhase,
               })
-              console.info('[Plushdown:OnlineDebug] match · round started · movement enabled')
+              console.info('[Toybox Brawlers:OnlineDebug] match · round started · movement enabled')
             }
           }
         }
@@ -1383,10 +1498,12 @@ const stage = startMinimalStage(canvas, {
   },
 })
 
-try {
-  collisionDebug = new CollisionDebugRenderer(stage.scene)
-} catch (err) {
-  console.error('[Plushdown] CollisionDebugRenderer failed to initialize:', err)
+if (DEV_MODE) {
+  try {
+    collisionDebug = new CollisionDebugRenderer(stage.scene)
+  } catch (err) {
+    console.error('[Toybox Brawlers] CollisionDebugRenderer failed to initialize:', err)
+  }
 }
 
 try {
@@ -1398,7 +1515,7 @@ try {
     screenPunch,
   })
 } catch (err) {
-  console.error('[Plushdown] HitFeelController failed to initialize:', err)
+  console.error('[Toybox Brawlers] HitFeelController failed to initialize:', err)
 }
 
 await loadBootAssets()
@@ -1419,7 +1536,7 @@ const mainMenu = mountMainMenu(overlay, {
     })
     matchPaused = false
     if (mode === 'online-lobby') {
-      console.info('[Plushdown:OnlineDebug] flow · online menu opened')
+      console.info('[Toybox Brawlers:OnlineDebug] flow · online menu opened')
     }
     if (mode === 'vs-bot-select' || mode === 'online-select') {
       if (mode === 'vs-bot-select') {
@@ -1454,7 +1571,7 @@ const mainMenu = mountMainMenu(overlay, {
         buildId: PLUSHDOWN_ONLINE_VERIFY_BUILD_ID,
         sessionGate: onlineLobbyMount?.session.getCharSelectGateDebug(),
       })
-      console.info('[Plushdown:OnlineDebug] flow · fighter select entered')
+      console.info('[Toybox Brawlers:OnlineDebug] flow · fighter select entered')
       queueMicrotask(() => tryStartOnlineMatchFromCharacterSelect())
       if (onlineLobbyMount?.session.getRole() === 'host') {
         console.info('[VERIFY_POLL] host_gate_poll_started intervalMs=200')
@@ -1520,7 +1637,7 @@ function leaveOnlineRematchToLobby(): void {
  * Initiator sets `sendRequest: true` so the peer opens the same screen.
  */
 function enterOnlineRematchCharacterSelectFromResults(opts: { sendRequest: boolean }): void {
-  console.info('[Plushdown:OnlineDebug] scene · rematch cleanup → fighter select')
+  console.info('[Toybox Brawlers:OnlineDebug] scene · rematch cleanup → fighter select')
   console.info('[rematch] entering character select')
   if (opts.sendRequest) {
     onlineLobbyMount?.session.sendRematchRequest()
@@ -1539,7 +1656,6 @@ function enterOnlineRematchCharacterSelectFromResults(opts: { sendRequest: boole
   countdownRemaining = 0
   roundBreakTimer = 0
   roundBanner = null
-  syncRosterTestDropdowns()
   onlineLobbyMount?.session.prepareForNewOnlineMatch()
   onlineLobbyMount?.session.resetLockstep()
   recreateFightersFromRosterIds()
@@ -1572,7 +1688,6 @@ function enterVsBotRematchCharacterSelectFromResults(): void {
   countdownRemaining = 0
   roundBreakTimer = 0
   roundBanner = null
-  syncRosterTestDropdowns()
   recreateFightersFromRosterIds()
   resetFightersForRound()
   setFightersVisible(false)
@@ -1701,7 +1816,6 @@ if (charSelectPanel) {
         rosterTestP2Id = p2Id
         pendingVsBotRematchCharSelect = false
         vsBotCharSelectApi?.setRematchMode(false)
-        syncRosterTestDropdowns()
         recreateFightersFromRosterIds()
         resetFightersForRound()
         setFightersVisible(false)
@@ -1721,8 +1835,6 @@ if (charSelectPanel) {
     },
   )
 }
-
-mountRosterTestPanel(root)
 
 const mainMenuRoot = overlay.querySelector<HTMLElement>('.main-menu')
 if (mainMenuRoot) {
@@ -1849,12 +1961,13 @@ window.addEventListener(
         return
       }
     }
-    if (e.code === 'Backquote') {
+    if (DEV_MODE && e.code === 'Backquote') {
       e.preventDefault()
       showCollisionDebug = !showCollisionDebug
       return
     }
     if (
+      DEV_MODE &&
       COMBAT_TEST_BOT_ALLOW_RUNTIME_TOGGLE &&
       e.code === 'F2' &&
       flowMode === 'vs-bot-match'
@@ -1866,23 +1979,23 @@ window.addEventListener(
   true,
 )
 
-console.info('[Plushdown:Boot] Main update loop: RAF tick via startMinimalStage → beforeRender → render')
-console.info('[Plushdown:Boot] flowMode=%s vsBotPhase=%s', flowMode, vsBotPhase)
+console.info('[Toybox Brawlers:Boot] Main update loop: RAF tick via startMinimalStage → beforeRender → render')
+console.info('[Toybox Brawlers:Boot] flowMode=%s vsBotPhase=%s', flowMode, vsBotPhase)
 console.info(
-  '[Plushdown:Boot] scene · children=%i · camera y=%s z=%s',
+  '[Toybox Brawlers:Boot] scene · children=%i · camera y=%s z=%s',
   stage.scene.children.length,
   stage.camera.position.y.toFixed(2),
   stage.camera.position.z.toFixed(2),
 )
 console.info(
-  '[Plushdown:Boot] subsystems · hitFeel=%s collisionDebug=%s p1=%s p2=%s',
+  '[Toybox Brawlers:Boot] subsystems · hitFeel=%s collisionDebug=%s p1=%s p2=%s',
   hitFeel ? 'ok' : 'off',
   collisionDebug ? 'ok' : 'off',
   playerFighter ? 'ok' : 'off',
   botFighter ? 'ok' : 'off',
 )
 console.info(
-  '[Plushdown:Boot] gameUiState=%s combatHudMounted=%s',
+  '[Toybox Brawlers:Boot] gameUiState=%s combatHudMounted=%s',
   getGameUiState(),
   String(!!matchHudCtrl),
 )

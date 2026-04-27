@@ -14,7 +14,6 @@ export const FUTURE_ANIMATION_STATE_KEYS = [
   'block',
   'hit',
   'ko',
-  'win',
 ] as const
 
 export type FutureAnimationStateKey = (typeof FUTURE_ANIMATION_STATE_KEYS)[number]
@@ -29,7 +28,6 @@ const FUTURE_FILE_SUFFIX_BY_STATE: Record<FutureAnimationStateKey, string> = {
   block: 'Block',
   hit: 'Hit',
   ko: 'KO',
-  win: 'Win',
 }
 
 export function buildFutureAnimationFilePath(

@@ -62,7 +62,7 @@ export function warmupRosterGpuOnce(
       warmed.push(assets)
       bucket.add(assets.root)
     } catch (err) {
-      console.warn('[Plushdown] Roster GPU warmup skipped one character:', err)
+      console.warn('[Toybox Brawlers] Roster GPU warmup skipped one character:', err)
     }
     index += 1
     scheduleIdle(step)

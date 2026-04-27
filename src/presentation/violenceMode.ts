@@ -65,7 +65,7 @@ export function setViolenceMode(mode: ViolenceMode): void {
     try {
       fn(mode)
     } catch (err) {
-      console.warn('[Plushdown] ViolenceMode listener failed:', err)
+      console.warn('[Toybox Brawlers] ViolenceMode listener failed:', err)
     }
   }
 }

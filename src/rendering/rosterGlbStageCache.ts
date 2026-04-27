@@ -153,7 +153,7 @@ export async function preloadRosterGlbBoot(id: RosterGlbFighterId): Promise<bool
 }
 
 /**
- * Stage 2: walk/run + combat clips (no KO / win).
+ * Stage 2: walk/run + combat clips (no KO).
  */
 export async function preloadRosterGlbCombat(id: RosterGlbFighterId): Promise<boolean> {
   const e = getEntry(id)
@@ -206,7 +206,7 @@ export async function preloadRosterGlbCombat(id: RosterGlbFighterId): Promise<bo
 }
 
 /**
- * Stage 3: KO + win for one roster fighter.
+ * Stage 3: KO for one roster fighter.
  */
 export async function preloadRosterGlbRoundEnd(id: RosterGlbFighterId): Promise<boolean> {
   const e = getEntry(id)

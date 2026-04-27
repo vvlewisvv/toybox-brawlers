@@ -27,7 +27,7 @@ export type ImportedGlbAnimCombatSnapshot = {
    * Nominal full attack cycle (startup + active + max recovery) — used to time-scale attack clips.
    */
   attackCycleDuration: number | null
-  /** Round / match just won — play victory clip while this counts down (see fighter `beginRoundWinPresentation`). */
+  /** Round / match just won window (win clips disabled; used only as compatibility signal). */
   roundWinPresentationT: number
   /** Initial win window length (constant while {@link roundWinPresentationT} counts down). */
   roundWinPresentationMaxT: number
@@ -368,7 +368,7 @@ export function createImportedGlbAnimationDriver(
       'ragdoll',
       'down',
     ])
-    byWin = pickClip(usable, ['win', 'victory', 'triumph', 'celebrat', 'cheer'])
+    byWin = undefined
 
     const strictIdleOnly = options?.strictIdleOnly === true
     useSlowWalkAsIdle = !strictIdleOnly && !byIdle && !useIdleAlternation && !!byWalk

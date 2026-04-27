@@ -1,6 +1,6 @@
 /**
  * Single manifest for roster GLB URLs and how they map to the 3-stage asset pipeline.
- * Stage 1: character rig + idle preview · Stage 2: locomotion + combat clips · Stage 3: KO + win.
+ * Stage 1: character rig + idle preview · Stage 2: locomotion + combat clips · Stage 3: KO.
  */
 export const ROSTER_GLB_FIGHTER_IDS = [
   'bibi',
@@ -40,7 +40,6 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
     roundEndTagged: [
       { url: '/models/Bibi-KO.glb', prefix: 'ko' },
-      { url: '/models/Bibi-Win.glb', prefix: 'win' },
     ],
   },
   bramble: {
@@ -56,7 +55,6 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
     roundEndTagged: [
       { url: '/models/bramble-KO.glb', prefix: 'ko' },
-      { url: '/models/bramble-Win.glb', prefix: 'win' },
     ],
   },
   chomp: {
@@ -72,7 +70,6 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
     roundEndTagged: [
       { url: '/models/chomp-KO.glb', prefix: 'ko' },
-      { url: '/models/chomp-Win.glb', prefix: 'win' },
     ],
   },
   emberclaw: {
@@ -88,7 +85,6 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
     roundEndTagged: [
       { url: '/models/emberclaw-KO.glb', prefix: 'ko' },
-      { url: '/models/emberclaw-Win.glb', prefix: 'win' },
     ],
   },
   gloom: {
@@ -104,7 +100,6 @@ export const ROSTER_GLB_STAGE_MANIFEST: Record<RosterGlbFighterId, RosterGlbStag
     ],
     roundEndTagged: [
       { url: '/models/gloom-Knock.glb', prefix: 'ko' },
-      { url: '/models/gloom-WIN.glb', prefix: 'win' },
     ],
   },
 }

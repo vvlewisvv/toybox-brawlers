@@ -8,6 +8,12 @@ export type FighterCollisionVolumes = {
 }
 
 const tmpDir = new Vector3()
+const BASE_PUSH_HALF_X = 0.36
+const BASE_STAND_HALF_HEIGHT = 1
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v))
+}
 
 /**
  * Axis-aligned hurt (vulnerable), push (spacing), and hit (strike) volumes for one fighter.
@@ -23,10 +29,17 @@ export function computeFighterCollisionVolumes(
   const planarX = self.getPlanarX()
   const pushHalfX = self.getPushHalfX()
 
-  const hurtHalfX = 0.34
+  /**
+   * Size-aware collision scaling:
+   * - X scales from push width (small cast = tighter body volume, bruiser = wider body volume)
+   * - Y scales from visual stand height so tall rigs do not whiff through shoulders/head
+   */
+  const widthScale = clamp(pushHalfX / BASE_PUSH_HALF_X, 0.78, 1.34)
+  const heightScale = clamp(stand / BASE_STAND_HALF_HEIGHT, 0.86, 1.36)
+  const hurtHalfX = 0.34 * widthScale
   const aerialHurt = !self.grounded
   /** Taller, slightly raised hurt while airborne — jump arc and anti-air connect read cleanly. */
-  const hurtHalfY = stand * 0.95 * (aerialHurt ? 1.2 : 1)
+  const hurtHalfY = stand * 0.95 * heightScale * (aerialHurt ? 1.2 : 1)
   const hurtHalfZ = 0.22
   const hurtLiftY = aerialHurt ? stand * 0.09 : 0
   const hurt = new Box3().setFromCenterAndSize(
@@ -54,16 +67,23 @@ export function computeFighterCollisionVolumes(
     } else {
       tmpDir.normalize()
     }
-    const center = new Vector3().copy(root).addScaledVector(tmpDir, prof.reach)
+    /**
+     * Keep authored strike profiles, but normalize by body footprint so distance feels
+     * consistent across very small vs very large fighters.
+     */
+    const reachScale = clamp(0.8 + widthScale * 0.2, 0.86, 1.14)
+    const center = new Vector3().copy(root).addScaledVector(tmpDir, prof.reach * reachScale)
     center.z = FIGHT_PLANE_Z
-    let halfY = prof.halfY
+    let halfY = prof.halfY * heightScale
+    const halfX = prof.halfX * widthScale
+    const halfZ = prof.halfZ * clamp(0.9 + widthScale * 0.1, 0.88, 1.18)
     if (!opponent.grounded) {
       halfY *= 1.15
       center.y += 0.12
     }
     hit = new Box3().setFromCenterAndSize(
       center,
-      new Vector3(prof.halfX * 2, halfY * 2, prof.halfZ * 2),
+      new Vector3(halfX * 2, halfY * 2, halfZ * 2),
     )
   }
 

@@ -47,13 +47,13 @@ export function startMinimalStage(
 
   try {
     console.info(
-      '[Plushdown:Boot] WebGLRenderer OK · pixelRatio=%s · canvasCss=%sx%s',
+      '[Toybox Brawlers:Boot] WebGLRenderer OK · pixelRatio=%s · canvasCss=%sx%s',
       renderer.getPixelRatio(),
       canvas.clientWidth || '(0)',
       canvas.clientHeight || '(0)',
     )
   } catch (e) {
-    console.error('[Plushdown:Boot] WebGLRenderer diagnostics failed:', e)
+    console.error('[Toybox Brawlers:Boot] WebGLRenderer diagnostics failed:', e)
   }
 
   const fightBackground = new Color(0x2a2226)
@@ -198,12 +198,12 @@ export function startMinimalStage(
     try {
       options.beforeRender?.(dt)
     } catch (err) {
-      console.error('[Plushdown] beforeRender threw — frame skipped for sim, render still attempted:', err)
+      console.error('[Toybox Brawlers] beforeRender threw — frame skipped for sim, render still attempted:', err)
     }
     try {
       renderer.render(scene, camera)
     } catch (err) {
-      console.error('[Plushdown] renderer.render:', err)
+      console.error('[Toybox Brawlers] renderer.render:', err)
     }
   }
   tick()

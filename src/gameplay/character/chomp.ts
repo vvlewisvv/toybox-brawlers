@@ -43,14 +43,14 @@ export const CHARACTER_CHOMP: CharacterDefinition = {
     heavy: {
       timings: {
         startup: 0.135,
-        active: 0.072,
+        active: 0.066,
         recoveryOnConnect: 0.16,
-        recoveryOnWhiff: 0.3,
+        recoveryOnWhiff: 0.284,
       },
       hitbox: {
-        reach: 0.46,
-        halfX: 0.36,
-        halfY: 0.46,
+        reach: 0.43,
+        halfX: 0.33,
+        halfY: 0.44,
         halfZ: 0.24,
       },
       damage: 12,
@@ -61,14 +61,14 @@ export const CHARACTER_CHOMP: CharacterDefinition = {
     special: {
       timings: {
         startup: 0.32,
-        active: 0.11,
+        active: 0.098,
         recoveryOnConnect: 0.25,
-        recoveryOnWhiff: 0.5,
+        recoveryOnWhiff: 0.46,
       },
       hitbox: {
-        reach: 0.37,
-        halfX: 0.44,
-        halfY: 0.62,
+        reach: 0.34,
+        halfX: 0.4,
+        halfY: 0.56,
         halfZ: 0.3,
       },
       damage: 22,

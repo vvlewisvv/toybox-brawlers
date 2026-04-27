@@ -148,7 +148,7 @@ export function initArcadeBotDebugFromUrl(): void {
     const q = new URLSearchParams(window.location.search)
     if (q.get('botAiDebug') === '1') {
       botAiDebugEnabled = true
-      console.info('[Plushdown] arcade bot AI debug on (?botAiDebug=1)')
+      console.info('[Toybox Brawlers] arcade bot AI debug on (?botAiDebug=1)')
     }
   } catch {
     /* ignore */

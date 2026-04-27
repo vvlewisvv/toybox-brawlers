@@ -435,7 +435,7 @@ export function wireOnlineCharacterSelect(
     onPeerFighterSelected(charId: string): void {
       if (remoteReady) return
       remotePreviewId = charId
-      console.info('[Plushdown:OnlineDebug] char_select · remote fighter_selected (preview)', {
+      console.info('[Toybox Brawlers:OnlineDebug] char_select · remote fighter_selected (preview)', {
         charId,
       })
       applyHighlights()
@@ -445,7 +445,7 @@ export function wireOnlineCharacterSelect(
       remoteConfirmedId = charId
       remotePreviewId = charId
       remoteReady = true
-      console.info('[Plushdown:OnlineDebug] char_select · remote player_ready (UI)', { charId })
+      console.info('[Toybox Brawlers:OnlineDebug] char_select · remote player_ready (UI)', { charId })
       applyHighlights()
     },
 

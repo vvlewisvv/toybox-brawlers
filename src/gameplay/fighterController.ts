@@ -1,5 +1,5 @@
 import type { Scene } from 'three'
-import { Color, Mesh, MeshPhysicalMaterial } from 'three'
+import { Color, Mesh, MeshBasicMaterial, MeshPhysicalMaterial } from 'three'
 import type { FrameSnapshot } from '../input'
 import { EMPTY_FRAME_SNAPSHOT } from '../input'
 import { readMoveAxis } from '../input'
@@ -37,13 +37,14 @@ import {
 export type { FighterTuning, JumpArc, MovementTuning } from './character/types'
 
 const LAND_SQUASH_DURATION = 0.13
-const RECEIVE_HIT_VISUAL_DUR = 0.14
+const RECEIVE_HIT_VISUAL_DUR = 0.1
 /** Longer hit presentation so Bibi’s GLB reaction can read; anim time-scale matches this window. */
-const RECEIVE_HIT_VISUAL_DUR_BIBI = 0.23
+const RECEIVE_HIT_VISUAL_DUR_BIBI = 0.12
 /** Plush KO flop on {@link PlaceholderFighterMesh.visuals} (seconds). */
 const KO_FLOP_DURATION = 1.05
 /** GLB victory pose window after winning a round (syncs clip length roughly to this). */
 const ROUND_WIN_PRESENTATION_SEC = 2.65
+const ENABLE_ROUND_WIN_PRESENTATION = false
 
 function smoothstep01(t: number): number {
   const x = Math.max(0, Math.min(1, t))
@@ -261,12 +262,13 @@ export function createFighter(
 
     bodyMat.emissive.setRGB(0, 0, 0)
     const e = anim.emissive
-    if (attackState.phase === 'active') {
-      bodyMat.emissive.setRGB(e.active[0], e.active[1], e.active[2])
-    } else if (attackState.phase === 'startup') {
-      bodyMat.emissive.setRGB(e.startup[0], e.startup[1], e.startup[2])
-    } else if (blocking) {
-      bodyMat.emissive.setRGB(e.block[0], e.block[1], e.block[2])
+    if (blocking) {
+      // Block hold glow: faint cool rim only.
+      bodyMat.emissive.setRGB(
+        Math.min(0.08, e.block[0] * 0.18),
+        Math.min(0.1, e.block[1] * 0.22),
+        Math.min(0.12, e.block[2] * 0.26),
+      )
     }
 
     if (stunned && !defeated && attackState.phase === 'idle') {
@@ -437,7 +439,7 @@ export function createFighter(
           : hurtStrikeKind === 'heavy'
             ? 1.18
             : 1
-      const amp = (receiveBlocked ? 0.05 : 0.095) * str
+      const amp = (receiveBlocked ? 0.025 : 0.055) * str
       bsx = 1 + amp * s
       bsy = 1 - amp * 0.72 * s
       bsz = 1 + amp * 0.45 * s
@@ -452,10 +454,10 @@ export function createFighter(
         if (rig?.armR) rig.armR.rotation.x += 0.35 * s * str * (receiveBlocked ? 0.4 : 1)
         if (rig?.armL) rig.armL.rotation.x += -0.28 * s * str * (receiveBlocked ? 0.35 : 1)
       }
-      const flash = s * (receiveBlocked ? 0.24 : 0.46 + 0.08 * str)
-      bodyMat.emissive.r = Math.max(bodyMat.emissive.r, flash)
-      bodyMat.emissive.g = Math.max(bodyMat.emissive.g, flash * 0.97)
-      bodyMat.emissive.b = Math.max(bodyMat.emissive.b, flash * 0.9)
+      const flash = s * (receiveBlocked ? 0.02 : 0.22 + 0.04 * str)
+      bodyMat.emissive.r = Math.max(bodyMat.emissive.r, flash * (receiveBlocked ? 0.72 : 1))
+      bodyMat.emissive.g = Math.max(bodyMat.emissive.g, flash * (receiveBlocked ? 0.92 : 0.82))
+      bodyMat.emissive.b = Math.max(bodyMat.emissive.b, flash * (receiveBlocked ? 1.12 : 0.74))
     }
 
     const motionRoot = meshAssets.proceduralMotionRoot
@@ -559,6 +561,23 @@ export function createFighter(
     const half = meshAssets.standHalfHeight * scaleY
     meshAssets.root.position.set(x, feetY + half, FIGHT_PLANE_Z)
     snapRootToFightingPlane(meshAssets.root)
+
+    // Keep floor contact shadow visually synced (smaller + lighter when airborne).
+    const air01 = Math.max(0, Math.min(1, feetY / 1.35))
+    const groundedMul = grounded ? 1 : 1 - air01 * 0.28
+    const sx = 1 + air01 * 0.42
+    const sz = 1 + air01 * 0.36
+    contact.mesh.scale.set(sx * groundedMul, 1, sz * groundedMul)
+    const coreMesh = contact.mesh.children[1]
+    const coreMat = coreMesh instanceof Mesh ? coreMesh.material : null
+    if (coreMat instanceof MeshBasicMaterial) {
+      coreMat.opacity = grounded ? 1 : 1 - air01 * 0.62
+    }
+    const glowMesh = contact.mesh.children[0]
+    const glowMat = glowMesh instanceof Mesh ? glowMesh.material : null
+    if (glowMat instanceof MeshBasicMaterial) {
+      glowMat.opacity = grounded ? 0.28 : 0.16 - air01 * 0.08
+    }
   }
 
   const api = {} as PlaceholderFighter
@@ -792,6 +811,7 @@ export function createFighter(
   }
 
   api.beginRoundWinPresentation = () => {
+    if (!ENABLE_ROUND_WIN_PRESENTATION) return
     if (hp <= 0) return
     const h = meshAssets.importedGlbAnim
     if (!h?.usesSkeletonClips || !h.hasWinClip) return

@@ -34,7 +34,7 @@ export function initAttackTimingDebugFromUrl(): void {
     const q = new URLSearchParams(window.location.search)
     if (q.get('attackDebug') === '1') {
       enabled = true
-      console.info('[Plushdown] attack timing debug overlay on (?attackDebug=1)')
+      console.info('[Toybox Brawlers] attack timing debug overlay on (?attackDebug=1)')
     }
   } catch {
     /* ignore */

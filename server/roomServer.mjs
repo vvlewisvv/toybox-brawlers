@@ -273,4 +273,4 @@ server.on('connection', (ws) => {
   })
 })
 
-console.info(`[Plushdown:rooms] ws://localhost:${PORT} (listening on ${HOST}:${PORT})`)
+console.info(`[Toybox Brawlers:rooms] ws://localhost:${PORT} (listening on ${HOST}:${PORT})`)

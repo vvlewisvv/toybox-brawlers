@@ -35,11 +35,11 @@ export const CHARACTER_EMBERCLAW: CharacterDefinition = {
     heavy: {
       timings: {
         startup: 0.13,
-        active: 0.075,
+        active: 0.068,
         recoveryOnConnect: 0.15,
-        recoveryOnWhiff: 0.31,
+        recoveryOnWhiff: 0.29,
       },
-      hitbox: { reach: 0.58, halfX: 0.33, halfY: 0.44, halfZ: 0.22 },
+      hitbox: { reach: 0.55, halfX: 0.31, halfY: 0.42, halfZ: 0.21 },
       damage: 11,
       hitStun: 0.25,
       blockStunDefender: 0.16,
@@ -47,15 +47,15 @@ export const CHARACTER_EMBERCLAW: CharacterDefinition = {
     },
     special: {
       timings: {
-        startup: 0.21,
-        active: 0.1,
+        startup: 0.23,
+        active: 0.092,
         recoveryOnConnect: 0.22,
-        recoveryOnWhiff: 0.52,
+        recoveryOnWhiff: 0.48,
       },
       hitbox: {
-        reach: 0.66,
-        halfX: 0.38,
-        halfY: 0.48,
+        reach: 0.62,
+        halfX: 0.35,
+        halfY: 0.46,
         halfZ: 0.26,
       },
       damage: 27,

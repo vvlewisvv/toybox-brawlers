@@ -2,6 +2,7 @@ import {
   CanvasTexture,
   DoubleSide,
   LinearFilter,
+  Group,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
@@ -13,7 +14,7 @@ import {
  * Child of fighter root; local Y at soles; does not affect collision.
  */
 export function createFighterContactShadow(radius: number): {
-  mesh: Mesh
+  mesh: Group
   dispose: () => void
 } {
   const size = 192
@@ -52,16 +53,40 @@ export function createFighterContactShadow(radius: number): {
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   })
-  const mesh = new Mesh(geom, mat)
-  mesh.rotation.x = -Math.PI / 2
-  mesh.renderOrder = -2
-  mesh.frustumCulled = false
+  const core = new Mesh(geom, mat)
+  core.rotation.x = -Math.PI / 2
+  core.renderOrder = -2
+  core.frustumCulled = false
+
+  // Warm bloom halo under the core to make characters pop from the stage.
+  const glowGeom = new PlaneGeometry(radius * 2.95, radius * 2.08)
+  const glowMat = new MeshBasicMaterial({
+    map,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    side: DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
+    color: 0xffd2b0,
+  })
+  const glow = new Mesh(glowGeom, glowMat)
+  glow.rotation.x = -Math.PI / 2
+  glow.renderOrder = -3
+  glow.frustumCulled = false
+
+  const mesh = new Group()
+  mesh.add(glow)
+  mesh.add(core)
 
   return {
     mesh,
     dispose: () => {
       geom.dispose()
+      glowGeom.dispose()
       mat.dispose()
+      glowMat.dispose()
       map.dispose()
     },
   }

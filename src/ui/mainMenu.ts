@@ -81,9 +81,9 @@ export function mountMainMenu(
   const { onFlowChange } = options
 
   overlay.innerHTML = `
-    <div class="main-menu" role="application" aria-label="Plushdown">
+    <div class="main-menu" role="application" aria-label="Toybox Brawlers">
       <div class="main-menu__panel" data-menu-view="main">
-        <h1 class="main-menu__title">Plushdown</h1>
+        <h1 class="main-menu__title">Toybox Brawlers</h1>
         <p class="main-menu__tagline">1v1 plush fighter</p>
         <nav class="main-menu__nav" aria-label="Primary">
           <button type="button" class="main-menu__btn main-menu__btn--primary" data-go="online-lobby" data-autofocus>
